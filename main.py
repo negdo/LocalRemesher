@@ -1,6 +1,7 @@
 import bpy
 import bmesh
 import numpy as np
+import mathutils
 
 
 def selectNext(current_edge, vertex, selected_edges, illegal_edges):
@@ -148,6 +149,35 @@ def print_paths(intersected_verts):
         print([v.index for v in i])
 
 
+def project_point_to_faces(point):
+    point = mathutils.Vector(point)
+    # init new bmesh
+    me = bpy.context.object.data
+    bm = bmesh.new()
+    bm.from_mesh(me)
+
+    # delete all faces that are not selected from bmesh
+    faces = [face for face in bm.faces if not face.select]
+    bmesh.ops.delete(bm, geom=faces, context="FACES")
+
+    # triangulate faces
+    triangulated = bmesh.ops.triangulate(bm, faces=bm.faces, quad_method="SHORT_EDGE")
+    tris = triangulated["faces"]
+
+    # find closest face
+    distances = [np.linalg.norm(face.calc_center_median() - point) for face in tris]
+    index = np.argmin(distances)
+    closest_face = tris[index]
+
+    # get closest point on face
+    closest_point = mathutils.geometry.closest_point_on_tri(point, closest_face.verts[0].co, closest_face.verts[1].co, closest_face.verts[2].co)
+
+    return closest_point
+
+
+
+
+
 
 # set mode to object mode and init bmesh
 bpy.ops.object.mode_set(mode='OBJECT')
@@ -171,8 +201,7 @@ illegal_edges = [edge for edge in edges_of_faces if len([face for face in edge.l
 semi_illegal_edges = [edge for edge in edges_of_faces if len([face for face in edge.link_faces if face.select]) > 0]
 
 
-# delete starting faces
-bmesh.ops.delete(bm, geom=faces_selected, context="FACES")
+
 
 
 # get loops and decide which edges to connect
@@ -255,7 +284,7 @@ for i in range(len(connecting_vertices)-1):
 
         if intersect is not None:
             # project intersect on original geometry
-            # TODO
+            intersect = project_point_to_faces(intersect)
 
             # create new vertex
             new_vert = bm.verts.new(intersect)
@@ -263,7 +292,10 @@ for i in range(len(connecting_vertices)-1):
             connecting_vertices[j].append(new_vert)
     
 
+# delete starting faces
+bmesh.ops.delete(bm, geom=faces_selected, context="FACES")
 
+# create new edges
 for i in range(len(connecting_vertices)):
     # connect vertices in shortest path
     path = shortest_path(connecting_vertices[i])
