@@ -142,6 +142,10 @@ def shortest_path(vertices):
     return path
 
 
+def print_paths(intersected_verts):
+    print("Intersected vertices:")
+    for i in intersected_verts:
+        print([v.index for v in i])
 
 
 
@@ -171,6 +175,7 @@ semi_illegal_edges = [edge for edge in edges_of_faces if len([face for face in e
 bmesh.ops.delete(bm, geom=faces_selected, context="FACES")
 
 
+# get loops and decide which edges to connect
 connecting_vertices = []
 used_edges = []
 
@@ -179,48 +184,71 @@ for edge in starting_edges:
     if edge not in used_edges:
         loop = get_loop(edge, illegal_edges, semi_illegal_edges)
         
-        # if two edges in loop are also in starting edges, we will probbably want to connect them later
+        # start and end of loop are in starting edges, we will probbably want to connect them later
         if len(loop) > 2 and loop[-1] in starting_edges and loop[-1] not in used_edges and loop[-1] != loop[0]:
-            # add edge to used edges
-            used_edges.append(loop[0])
-            used_edges.append(loop[-1])
+            
             
             # choose vertex that is in starting_verts and append tuple of both vertices
-            if edge.verts[0] in starting_verts:
+            if edge.verts[0] in starting_verts and edge.verts[1] not in starting_verts:
                 v1 = edge.verts[0]
-            else:
+            elif edge.verts[1] in starting_verts and edge.verts[0] not in starting_verts:
                 v1 = edge.verts[1]
-            if loop[-1].verts[0] in starting_verts and loop[-1].verts[0] in starting_verts:
-                # pick nearest vertex
-                if np.linalg.norm(np.array(loop[-1].verts[0].co) - np.array(v1.co)) < np.linalg.norm(np.array(loop[-1].verts[1].co) - np.array(v1.co)):
+            else:
+                v1 = None
+
+            # the other end
+            if loop[-1].verts[0] in starting_verts and loop[-1].verts[1] not in starting_verts:
+                v2 = loop[-1].verts[0]
+            elif loop[-1].verts[1] in starting_verts and loop[-1].verts[0] not in starting_verts:
+                v2 = loop[-1].verts[1]
+            else:
+                v2 = None
+
+            # if both vertices of edge are in starting verts, we have to choose the closer one
+            if v1 is None and v2 is not None:
+                if np.linalg.norm(v2.co - edge.verts[0].co) < np.linalg.norm(v2.co - edge.verts[1].co):
+                    v1 = edge.verts[0]
+                else:
+                    v1 = edge.verts[1]
+            elif v2 is None and v1 is not None:
+                if np.linalg.norm(v1.co - loop[-1].verts[0].co) < np.linalg.norm(v1.co - loop[-1].verts[1].co):
                     v2 = loop[-1].verts[0]
                 else:
                     v2 = loop[-1].verts[1]
-            elif loop[-1].verts[0] in starting_verts:
-                v2 = loop[-1].verts[0]
-            else:
-                v2 = loop[-1].verts[1]
+            elif v1 is None and v2 is None:
+                # find closest 2 vertices from each edge
+                distances = np.zeros(4)
+                distances[0] = np.linalg.norm(edge.verts[0].co - loop[-1].verts[0].co)
+                distances[1] = np.linalg.norm(edge.verts[0].co - loop[-1].verts[1].co)
+                distances[2] = np.linalg.norm(edge.verts[1].co - loop[-1].verts[0].co)
+                distances[3] = np.linalg.norm(edge.verts[1].co - loop[-1].verts[1].co)
+
+                # get index of the 2 closest vertices
+                index = np.argmin(distances)
+                if index == 0:
+                    v1 = edge.verts[0]
+                    v2 = loop[-1].verts[0]
+                elif index == 1:
+                    v1 = edge.verts[0]
+                    v2 = loop[-1].verts[1]
+                elif index == 2:
+                    v1 = edge.verts[1]
+                    v2 = loop[-1].verts[0]
+                else:
+                    v1 = edge.verts[1]
+                    v2 = loop[-1].verts[1]
+
+
+            # add edge to used edges
+            used_edges.append(loop[0])
+            used_edges.append(loop[-1])
 
             connecting_vertices.append([v1, v2])
 
 
 
-
-
-
-def print_paths(intersected_verts):
-    print("Intersected vertices:")
-    for i in intersected_verts:
-        print([v.index for v in i])
-
-
-intersected_verts = [[vertices[0], vertices[1]] for vertices in connecting_vertices]
-
-
-
 # add intersecting points
 for i in range(len(connecting_vertices)-1):
-    # intersected_verts[i] = [connecting_vertices[i][0], connecting_vertices[i][1]]
     for j in range(i+1, len(connecting_vertices)):
         # get intersection of two edges
         intersect = get_intersection(connecting_vertices[i][0].co, connecting_vertices[i][1].co, connecting_vertices[j][0].co, connecting_vertices[j][1].co)
@@ -231,31 +259,26 @@ for i in range(len(connecting_vertices)-1):
 
             # create new vertex
             new_vert = bm.verts.new(intersect)
-            intersected_verts[i].append(new_vert)
-            intersected_verts[j].append(new_vert)
+            connecting_vertices[i].append(new_vert)
+            connecting_vertices[j].append(new_vert)
     
 
-print_paths(intersected_verts)
-print("ordered paths:")
 
-for i in range(len(intersected_verts)):
+for i in range(len(connecting_vertices)):
     # connect vertices in shortest path
-    path = shortest_path(intersected_verts[i])
+    path = shortest_path(connecting_vertices[i])
     print([v.index for v in path])
     for k in range(len(path)-1):
         try:
             bm.edges.new([path[k], path[k+1]])
         except:
             print("edge already exists")
+            print(path[k].index, path[k+1].index)
 
 
     
         
                                     
-
-
-
-
 # write the bmesh back to the mesh
 bm.to_mesh(me)
 bpy.ops.object.mode_set(mode='EDIT')
