@@ -175,7 +175,7 @@ def project_point_to_faces(point):
     return closest_point
 
 
-def select_convex(bm, verts, bm_original):
+def select_faces_inside_convex_hull(bm, verts, bm_original):
     # deselect all geometry
     for geom in bm.verts[:] + bm.edges[:] + bm.faces[:]:
         geom.select_set(False)
@@ -189,6 +189,7 @@ def select_convex(bm, verts, bm_original):
     print("overlaps:", len(overlaps_temp))
     for overlap in overlaps_temp:
         print(overlap)
+        
 
     # delete all geometry that is not part of the convex hull
     not_selected = [vert for vert in bm.verts[:] if not vert.select]
@@ -200,12 +201,6 @@ def select_convex(bm, verts, bm_original):
     # select faces on original bmesh that are inside the convex hull
     # use raycasting in BVH tree to check normals
     for face in bm_original.faces:
-        #check if face is overlapping
-        for overlap in overlaps:
-            if face.index == overlap:
-                # face.select_set(True)
-                pass
-
 
         # get center of face
         center = face.calc_center_median()
@@ -214,13 +209,21 @@ def select_convex(bm, verts, bm_original):
         
         # raycast in BVH tree
         hit, hit_normal, face_index, distance = bvh.ray_cast(center, normal)
+
         if hit is None:
-            hit, hit_normal, face_index, distance = bvh.ray_cast(center, -normal)
+            # hit, hit_normal, face_index, distance = bvh.ray_cast(center, -normal)
+            pass
 
-
+        
         # if normal is negative, face is inside the convex hull
-        if hit is not None and hit_normal.dot(normal) > 0:
+        if hit is not None and (hit_normal.dot(normal) > 0 or distance < 0.0001):
             face.select_set(True)
+            print("hit:", hit)
+            print("hit_normal:", hit_normal)
+            print("face_index:", face_index)
+            print("distance:", distance)
+            print("normal:", normal)
+            print(hit_normal.dot(normal))
 
     
     
@@ -241,18 +244,16 @@ bm3.from_mesh(me)
 
 
 
-# get selected stuff
+# get selected stuff for generating convex hull
+faces_selected = [face for face in bm2.faces if face.select]
+verts_selected = list(set(vert for face in faces_selected for vert in face.verts))
+
+select_faces_inside_convex_hull(bm2, verts_selected, bm)
+
+
+# get list of selected faces - including the ones in the convex hull
 faces_selected = [face for face in bm.faces if face.select]
-faces_selected2 = [face for face in bm2.faces if face.select]
-verts_selected = [vert for face in faces_selected for vert in face.verts]
-verts_selected2 = [vert for face in faces_selected2 for vert in face.verts]
-# delete duplicate vertices
-verts_selected = list(set(verts_selected))
-verts_selected2 = list(set(verts_selected2))
-
-
-select_convex(bm2, verts_selected2, bm3)
-
+verts_selected = list(set(vert for face in faces_selected for vert in face.verts))
 
 edges_of_faces = [edge for face in faces_selected for edge in face.edges]
 # only vertices that are connected to at least one outside face are starting vertices
@@ -378,5 +379,5 @@ for i in range(len(connecting_vertices)):
         
                                     
 # write the bmesh back to the mesh
-bm3.to_mesh(me)
+bm.to_mesh(me)
 bpy.ops.object.mode_set(mode='EDIT')
