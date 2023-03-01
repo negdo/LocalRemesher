@@ -63,12 +63,12 @@ def selectNext(current_edge, vertex, selected_edges, illegal_edges):
 
 def get_loop(edge, illegal_edges, semi_illegal_edges):
     # go both directions
-    print("")
-    print("edge: ", edge.index)
+    # print("")
+    # print("edge: ", edge.index)
     selected_edges_left = selectNext(edge, edge.verts[0], [edge], illegal_edges)
-    print("left:", len(selected_edges_left))
+    # print("left:", len(selected_edges_left))
     selected_edges_right = selectNext(edge, edge.verts[1], [edge], illegal_edges)
-    print("right:", len(selected_edges_right))
+    # print("right:", len(selected_edges_right))
 
     if len(selected_edges_left) == 1:
         return selected_edges_right
@@ -175,7 +175,55 @@ def project_point_to_faces(point):
     return closest_point
 
 
+def select_convex(bm, verts, bm_original):
+    # deselect all geometry
+    for geom in bm.verts[:] + bm.edges[:] + bm.faces[:]:
+        geom.select_set(False)
+    for geom in bm_original.verts[:] + bm_original.edges[:] + bm_original.faces[:]:
+        geom.select_set(False)
 
+    #  generate convex hull of selected faces
+    hull = bmesh.ops.convex_hull(bm, input=verts, use_existing_faces=True)
+    overlaps_temp = hull["geom_holes"]
+    overlaps = []
+    print("overlaps:", len(overlaps_temp))
+    for overlap in overlaps_temp:
+        print(overlap)
+
+    # delete all geometry that is not part of the convex hull
+    not_selected = [vert for vert in bm.verts[:] if not vert.select]
+    bmesh.ops.delete(bm, geom=not_selected, context="VERTS")
+            
+    # build BVH tree of convex hull
+    bvh = mathutils.bvhtree.BVHTree.FromBMesh(bm)
+
+    # select faces on original bmesh that are inside the convex hull
+    # use raycasting in BVH tree to check normals
+    for face in bm_original.faces:
+        #check if face is overlapping
+        for overlap in overlaps:
+            if face.index == overlap:
+                # face.select_set(True)
+                pass
+
+
+        # get center of face
+        center = face.calc_center_median()
+        # get normal of face
+        normal = face.normal
+        
+        # raycast in BVH tree
+        hit, hit_normal, face_index, distance = bvh.ray_cast(center, normal)
+        if hit is None:
+            hit, hit_normal, face_index, distance = bvh.ray_cast(center, -normal)
+
+
+        # if normal is negative, face is inside the convex hull
+        if hit is not None and hit_normal.dot(normal) > 0:
+            face.select_set(True)
+
+    
+    
 
 
 
@@ -185,10 +233,27 @@ me = bpy.context.object.data
 bm = bmesh.new()
 bm.from_mesh(me)
 
+bm2 = bmesh.new()
+bm2.from_mesh(me)
+
+bm3 = bmesh.new()
+bm3.from_mesh(me)
+
+
 
 # get selected stuff
 faces_selected = [face for face in bm.faces if face.select]
+faces_selected2 = [face for face in bm2.faces if face.select]
 verts_selected = [vert for face in faces_selected for vert in face.verts]
+verts_selected2 = [vert for face in faces_selected2 for vert in face.verts]
+# delete duplicate vertices
+verts_selected = list(set(verts_selected))
+verts_selected2 = list(set(verts_selected2))
+
+
+select_convex(bm2, verts_selected2, bm3)
+
+
 edges_of_faces = [edge for face in faces_selected for edge in face.edges]
 # only vertices that are connected to at least one outside face are starting vertices
 starting_verts = [vert for vert in verts_selected if len([face for face in vert.link_faces if not face.select]) > 0]
@@ -299,18 +364,19 @@ bmesh.ops.delete(bm, geom=faces_selected, context="FACES")
 for i in range(len(connecting_vertices)):
     # connect vertices in shortest path
     path = shortest_path(connecting_vertices[i])
-    print([v.index for v in path])
+    # print([v.index for v in path])
     for k in range(len(path)-1):
         try:
             bm.edges.new([path[k], path[k+1]])
         except:
-            print("edge already exists")
-            print(path[k].index, path[k+1].index)
+            # print("edge already exists")
+            # print(path[k].index, path[k+1].index)
+            pass
 
 
     
         
                                     
 # write the bmesh back to the mesh
-bm.to_mesh(me)
+bm3.to_mesh(me)
 bpy.ops.object.mode_set(mode='EDIT')
