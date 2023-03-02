@@ -63,12 +63,8 @@ def select_next(current_edge, vertex, selected_edges, illegal_edges):
 
 def get_loop(edge, illegal_edges):
     # go both directions
-    # print("")
-    # print("edge: ", edge.index)
     selected_edges_left = select_next(edge, edge.verts[0], [edge], illegal_edges)
-    # print("left:", len(selected_edges_left))
     selected_edges_right = select_next(edge, edge.verts[1], [edge], illegal_edges)
-    # print("right:", len(selected_edges_right))
 
     if len(selected_edges_left) == 1:
         return selected_edges_right
@@ -95,10 +91,6 @@ def get_intersection(r1, q1, r2, q2):
 
     # get normal vector of plane defined by lines
     n = np.cross(e1, e2)
-
-    # if lines are close to parralel return None
-    if np.linalg.norm(n) < 0.2:
-        return None
     
     # get distance between lines
     # distance = np.dot(n, (r1 - r2)) / np.linalg.norm(n)
@@ -113,6 +105,7 @@ def get_intersection(r1, q1, r2, q2):
 
     # check if t1 and t2 are in range of line
     if t1 < 0 or t1 > 1 or t2 < 0 or t2 > 1:
+        print("t1 or t2 out of range")
         return None
 
     # return middle point
@@ -219,6 +212,7 @@ def select_faces_inside_convex_hull(bm, verts, bm_original):
             # print("normal:", normal)
             # print(hit_normal.dot(normal))
 
+
 def closest_vertices(edge1, edge2):
     # get vertices of the two edges
     vert1 = edge1.verts[0]
@@ -245,7 +239,8 @@ def closest_vertices(edge1, edge2):
     elif index1 == 3:
         return vert2, vert4
     
-def edge_similarity_weight(edge1, edge2, avg_dist):
+
+def edge_similarity_weight(edge1, edge2, avg_dist, avg_direction):
     # get vectors of the two edges
     edge1_vec = (edge1.verts[0].co - edge1.verts[1].co)/np.linalg.norm(edge1.verts[0].co - edge1.verts[1].co)
     edge2_vec = (edge2.verts[0].co - edge2.verts[1].co)/np.linalg.norm(edge2.verts[0].co - edge2.verts[1].co)
@@ -261,16 +256,25 @@ def edge_similarity_weight(edge1, edge2, avg_dist):
     # edge 3 - edge between vert1 and vert2
     edge3_vec = (vert1.co - vert2.co)/np.linalg.norm(vert1.co - vert2.co)
 
+    # get angle offset of edges
     angle = np.abs(np.dot(edge1_vec, edge3_vec)) + np.abs(np.dot(edge2_vec, edge3_vec))
 
     # get distance between vertices
     dist = np.linalg.norm(np.array(vert1.co) - np.array(vert2.co))
 
+    # get angle offset from average vector
+    # normalise the resulting vector
+    avg_angle_diff = np.abs(np.dot(avg_direction, edge3_vec))
+    if avg_angle_diff < 0.5:
+        # if less than 0.5, they are closer to perpendicular
+        avg_angle_diff = 1 - avg_angle_diff
+        
+
     if dist == 0 or angle < 0.7:
         return 0, 0, 0
 
     # get weight
-    weight = angle / (dist + avg_dist)
+    weight = angle * avg_angle_diff**2 / (dist + avg_dist)
 
     return weight, vert1, vert2
     
@@ -314,6 +318,8 @@ illegal_edges = [edge for edge in edges_of_faces if len([face for face in edge.l
 semi_illegal_edges = [edge for edge in edges_of_faces if len([face for face in edge.link_faces if face.select]) > 0]
 # average length of starting edges
 avg_length = np.mean([edge.calc_length() for edge in starting_edges])
+# average direction of starting edges
+avg_direction = np.mean([(edge.verts[0].co - edge.verts[1].co)//np.linalg.norm(edge.verts[0].co - edge.verts[1].co) for edge in starting_edges], axis=0)
 
 
 
@@ -387,7 +393,6 @@ class potential_edge:
         self.v2 = v2
 
     def __lt__(self, other):
-        print("comparing", self.weight, other.weight)
         return self.weight < other.weight
 
 # init priority queue
@@ -398,14 +403,16 @@ heapq.heapify(pq)
 for i in range(len(edges_to_connect)-1):
     for j in range(i+1, len(edges_to_connect)):
         # get weight
-        weight, v1, v2 = edge_similarity_weight(edges_to_connect[i], edges_to_connect[j], avg_length)
+        weight, v1, v2 = edge_similarity_weight(edges_to_connect[i], edges_to_connect[j], avg_length, avg_direction)
 
         # check if edge would make sense
         # both vertices have to be in starting_verts
         if v1 not in starting_verts or v2 not in starting_verts:
-            #print("not in starting verts")
-            # continue
-            pass
+            continue
+
+        # check if edge already exists
+        if v2 in v1.link_edges:
+            continue
 
         # check if weight is not 0
         if weight == 0:
@@ -438,8 +445,6 @@ while len(pq) > 0:
 
 
 
-
-
 # add intersecting points
 for i in range(len(connecting_vertices)-1):
     for j in range(i+1, len(connecting_vertices)):
@@ -466,7 +471,8 @@ for i in range(len(connecting_vertices)):
     # print([v.index for v in path])
     for k in range(len(path)-1):
         try:
-            bm.edges.new([path[k], path[k+1]])
+            edge = bm.edges.new([path[k], path[k+1]])
+            edge.crease = 1
         except:
             # print("edge already exists")
             # print(path[k].index, path[k+1].index)
