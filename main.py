@@ -4,7 +4,7 @@ import numpy as np
 import mathutils
 
 
-def selectNext(current_edge, vertex, selected_edges, illegal_edges):
+def select_next(current_edge, vertex, selected_edges, illegal_edges):
     
     # check if vertex has 4 edges
     if len(vertex.link_edges)  == 1:
@@ -27,7 +27,7 @@ def selectNext(current_edge, vertex, selected_edges, illegal_edges):
             selected_edges.append(new_edges[0])
 
             # continue with the next vertex recursively
-            selectNext(new_edges[0], new_edges[0].other_vert(vertex), selected_edges, illegal_edges)
+            select_next(new_edges[0], new_edges[0].other_vert(vertex), selected_edges, illegal_edges)
 
     # if there are two edges, find the most parralel one
     elif len(new_edges) >= 2:
@@ -40,7 +40,7 @@ def selectNext(current_edge, vertex, selected_edges, illegal_edges):
             selected_edges.append(new_edges[index])
 
             # continue with the next vertex recursively
-            selectNext(new_edges[index], new_edges[index].other_vert(vertex), selected_edges, illegal_edges)
+            select_next(new_edges[index], new_edges[index].other_vert(vertex), selected_edges, illegal_edges)
 
     # check, if any edges are close to parralel
     elif len(new_edges) == 0:
@@ -54,20 +54,20 @@ def selectNext(current_edge, vertex, selected_edges, illegal_edges):
                 selected_edges.append(edges[index])
 
                 # continue with the next vertex recursively
-                selectNext(edges[index], edges[index].other_vert(vertex), selected_edges, illegal_edges)
+                select_next(edges[index], edges[index].other_vert(vertex), selected_edges, illegal_edges)
 
         
 
     return selected_edges
 
 
-def get_loop(edge, illegal_edges, semi_illegal_edges):
+def get_loop(edge, illegal_edges):
     # go both directions
     # print("")
     # print("edge: ", edge.index)
-    selected_edges_left = selectNext(edge, edge.verts[0], [edge], illegal_edges)
+    selected_edges_left = select_next(edge, edge.verts[0], [edge], illegal_edges)
     # print("left:", len(selected_edges_left))
-    selected_edges_right = selectNext(edge, edge.verts[1], [edge], illegal_edges)
+    selected_edges_right = select_next(edge, edge.verts[1], [edge], illegal_edges)
     # print("right:", len(selected_edges_right))
 
     if len(selected_edges_left) == 1:
@@ -184,12 +184,7 @@ def select_faces_inside_convex_hull(bm, verts, bm_original):
 
     #  generate convex hull of selected faces
     hull = bmesh.ops.convex_hull(bm, input=verts, use_existing_faces=True)
-    overlaps_temp = hull["geom_holes"]
-    overlaps = []
-    print("overlaps:", len(overlaps_temp))
-    for overlap in overlaps_temp:
-        print(overlap)
-        
+
 
     # delete all geometry that is not part of the convex hull
     not_selected = [vert for vert in bm.verts[:] if not vert.select]
@@ -211,23 +206,74 @@ def select_faces_inside_convex_hull(bm, verts, bm_original):
         hit, hit_normal, face_index, distance = bvh.ray_cast(center, normal)
 
         if hit is None:
-            # hit, hit_normal, face_index, distance = bvh.ray_cast(center, -normal)
-            pass
+            hit, hit_normal, face_index, distance = bvh.ray_cast(center, -normal)
 
         
         # if normal is negative, face is inside the convex hull
         if hit is not None and (hit_normal.dot(normal) > 0 or distance < 0.0001):
             face.select_set(True)
-            print("hit:", hit)
-            print("hit_normal:", hit_normal)
-            print("face_index:", face_index)
-            print("distance:", distance)
-            print("normal:", normal)
-            print(hit_normal.dot(normal))
+            # print("hit:", hit)
+            # print("hit_normal:", hit_normal)
+            # print("face_index:", face_index)
+            # print("distance:", distance)
+            # print("normal:", normal)
+            # print(hit_normal.dot(normal))
 
-    
-    
+def closest_vertices(edge1, edge2):
+    # get vertices of the two edges
+    vert1 = edge1.verts[0]
+    vert2 = edge1.verts[1]
+    vert3 = edge2.verts[0]
+    vert4 = edge2.verts[1]
 
+    # get distance between vertices
+    dist1 = np.linalg.norm(np.array(vert1.co) - np.array(vert3.co))
+    dist2 = np.linalg.norm(np.array(vert1.co) - np.array(vert4.co))
+    dist3 = np.linalg.norm(np.array(vert2.co) - np.array(vert3.co))
+    dist4 = np.linalg.norm(np.array(vert2.co) - np.array(vert4.co))
+
+    # get index of the two vertices that are closest to each other
+    index1 = np.argmin([dist1, dist2, dist3, dist4])
+
+    # return vertices
+    if index1 == 0:
+        return vert1, vert3
+    elif index1 == 1:
+        return vert1, vert4
+    elif index1 == 2:
+        return vert2, vert3
+    elif index1 == 3:
+        return vert2, vert4
+    
+def edge_similarity_weight(edge1, edge2, avg_dist):
+    # get vectors of the two edges
+    edge1_vec = (edge1.verts[0].co - edge1.verts[1].co)/np.linalg.norm(edge1.verts[0].co - edge1.verts[1].co)
+    edge2_vec = (edge2.verts[0].co - edge2.verts[1].co)/np.linalg.norm(edge2.verts[0].co - edge2.verts[1].co)
+    
+    # get closest vertices
+    vert1, vert2 = closest_vertices(edge1, edge2)
+
+    # check if distance is too small
+    dist = np.linalg.norm(np.array(vert1.co) - np.array(vert2.co))
+    if dist < 0.0001:
+        return 0, 0, 0
+
+    # edge 3 - edge between vert1 and vert2
+    edge3_vec = (vert1.co - vert2.co)/np.linalg.norm(vert1.co - vert2.co)
+
+    angle = np.abs(np.dot(edge1_vec, edge3_vec)) + np.abs(np.dot(edge2_vec, edge3_vec))
+
+    # get distance between vertices
+    dist = np.linalg.norm(np.array(vert1.co) - np.array(vert2.co))
+
+    if dist == 0 or angle < 0.7:
+        return 0, 0, 0
+
+    # get weight
+    weight = angle / (dist + avg_dist)
+
+    return weight, vert1, vert2
+    
 
 
 # set mode to object mode and init bmesh
@@ -248,7 +294,7 @@ bm3.from_mesh(me)
 faces_selected = [face for face in bm2.faces if face.select]
 verts_selected = list(set(vert for face in faces_selected for vert in face.verts))
 
-select_faces_inside_convex_hull(bm2, verts_selected, bm)
+select_faces_inside_convex_hull(bm2, verts_selected, bm3)
 
 
 # get list of selected faces - including the ones in the convex hull
@@ -258,6 +304,7 @@ verts_selected = list(set(vert for face in faces_selected for vert in face.verts
 edges_of_faces = [edge for face in faces_selected for edge in face.edges]
 # only vertices that are connected to at least one outside face are starting vertices
 starting_verts = [vert for vert in verts_selected if len([face for face in vert.link_faces if not face.select]) > 0]
+print("starting_verts:", starting_verts)
 edges_of_verts = [edge for vert in starting_verts for edge in vert.link_edges]
 # only edges that are connected to at least one outside face are starting edges
 starting_edges = [edge for edge in edges_of_verts if len([face for face in edge.link_faces if not face.select]) > 0]
@@ -265,7 +312,8 @@ starting_edges = [edge for edge in edges_of_verts if len([face for face in edge.
 illegal_edges = [edge for edge in edges_of_faces if len([face for face in edge.link_faces if not face.select]) == 0]
 # semi illegal edges are on edge of selected faces
 semi_illegal_edges = [edge for edge in edges_of_faces if len([face for face in edge.link_faces if face.select]) > 0]
-
+# average length of starting edges
+avg_length = np.mean([edge.calc_length() for edge in starting_edges])
 
 
 
@@ -277,7 +325,7 @@ used_edges = []
 for edge in starting_edges:
     # check if edge is already used
     if edge not in used_edges:
-        loop = get_loop(edge, illegal_edges, semi_illegal_edges)
+        loop = get_loop(edge, illegal_edges)
         
         # start and end of loop are in starting edges, we will probbably want to connect them later
         if len(loop) > 2 and loop[-1] in starting_edges and loop[-1] not in used_edges and loop[-1] != loop[0]:
@@ -312,26 +360,7 @@ for edge in starting_edges:
                     v2 = loop[-1].verts[1]
             elif v1 is None and v2 is None:
                 # find closest 2 vertices from each edge
-                distances = np.zeros(4)
-                distances[0] = np.linalg.norm(edge.verts[0].co - loop[-1].verts[0].co)
-                distances[1] = np.linalg.norm(edge.verts[0].co - loop[-1].verts[1].co)
-                distances[2] = np.linalg.norm(edge.verts[1].co - loop[-1].verts[0].co)
-                distances[3] = np.linalg.norm(edge.verts[1].co - loop[-1].verts[1].co)
-
-                # get index of the 2 closest vertices
-                index = np.argmin(distances)
-                if index == 0:
-                    v1 = edge.verts[0]
-                    v2 = loop[-1].verts[0]
-                elif index == 1:
-                    v1 = edge.verts[0]
-                    v2 = loop[-1].verts[1]
-                elif index == 2:
-                    v1 = edge.verts[1]
-                    v2 = loop[-1].verts[0]
-                else:
-                    v1 = edge.verts[1]
-                    v2 = loop[-1].verts[1]
+                v1, v2 = closest_vertices(edge, loop[-1])
 
 
             # add edge to used edges
@@ -339,6 +368,75 @@ for edge in starting_edges:
             used_edges.append(loop[-1])
 
             connecting_vertices.append([v1, v2])
+
+
+# connecting the rest of vertices
+# edges that are facing the same direction have higher priority
+# vertices that are closer to each other have higher priority
+# calculate weight for each combination of edges
+# use priority queue to get the best combination
+
+edges_to_connect = [edge for edge in edges_of_verts if edge not in used_edges]
+
+print(len(edges_to_connect))
+
+class potential_edge:
+    def __init__(self, weight, v1, v2):
+        self.weight = weight
+        self.v1 = v1
+        self.v2 = v2
+
+    def __lt__(self, other):
+        print("comparing", self.weight, other.weight)
+        return self.weight < other.weight
+
+# init priority queue
+import heapq
+pq = []
+heapq.heapify(pq)
+
+for i in range(len(edges_to_connect)-1):
+    for j in range(i+1, len(edges_to_connect)):
+        # get weight
+        weight, v1, v2 = edge_similarity_weight(edges_to_connect[i], edges_to_connect[j], avg_length)
+
+        # check if edge would make sense
+        # both vertices have to be in starting_verts
+        if v1 not in starting_verts or v2 not in starting_verts:
+            #print("not in starting verts")
+            # continue
+            pass
+
+        # check if weight is not 0
+        if weight == 0:
+            continue
+
+        # add to priority queue
+        heapq.heappush(pq, potential_edge(weight, v1, v2))
+
+used_dict = {}
+
+while len(pq) > 0:
+    # get best combination
+    edge_to_be = heapq.heappop(pq)
+    
+
+    # check if vertices are already used
+    # if vert1 not in used_dict and vert2 not in used_dict:
+    if edge_to_be.v1 not in used_dict and edge_to_be.v2 not in used_dict:
+        print("adding edge")
+        used_dict[edge_to_be.v1] = True
+        used_dict[edge_to_be.v2] = True
+        connecting_vertices.append([edge_to_be.v1, edge_to_be.v2])
+
+    
+
+    
+
+
+
+
+
 
 
 
