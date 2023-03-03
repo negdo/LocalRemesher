@@ -2,6 +2,7 @@ import bpy
 import bmesh
 import numpy as np
 import mathutils
+from scipy.optimize import linear_sum_assignment
 
 
 def select_next(current_edge, vertex, selected_edges, illegal_edges):
@@ -93,7 +94,12 @@ def get_intersection(r1, q1, r2, q2):
     n = np.cross(e1, e2)
     
     # get distance between lines
-    # distance = np.dot(n, (r1 - r2)) / np.linalg.norm(n)
+    distance = np.dot(n, (r1 - r2)) / np.linalg.norm(n)
+
+    # if distance is more than minimum half of length of the lines, return None
+    distance_ratio = 5*distance / min(np.linalg.norm(e1), np.linalg.norm(e2))
+    if distance_ratio > 1:
+        return None
 
     # calculate t1 and t2
     t1 = np.dot(np.cross(e2, n), (r2 - r1)) / np.dot(n, n)
@@ -104,10 +110,13 @@ def get_intersection(r1, q1, r2, q2):
     p2 = r2 + t2 * e2
 
     # check if t1 and t2 are in range of line
-    if t1 < 0 or t1 > 1 or t2 < 0 or t2 > 1:
-        print("t1 or t2 out of range")
+    if t1 < 0.001 or t1 > 0.999 or t2 < 0.01 or t2 > 0.999:
         return None
-
+    
+    # distance can be higher in the middle of the line, linearly changing function
+    if 1 - 2 * abs(t1 - 0.5) * distance_ratio < 0 or 1 - 2 * abs(t2 - 0.5) * distance_ratio < 0:
+        return None
+    
     # return middle point
     return (p1 + p2) / 2
 
@@ -270,13 +279,9 @@ def edge_similarity_weight(edge1, edge2, avg_dist, avg_direction):
     if avg_angle_diff < 0.5:
         # if less than 0.5, they are closer to perpendicular
         avg_angle_diff = 1 - avg_angle_diff
-        
-
-    if dist == 0 or angle < 0.7:
-        return 0, 0, 0
 
     # get weight
-    weight = angle * avg_angle_diff**2 / (dist + avg_dist)
+    weight = angle * avg_angle_diff**2 #/ (dist + avg_dist)
 
     return weight, vert1, vert2
     
@@ -313,7 +318,32 @@ starting_verts = [vert for vert in verts_selected if len([face for face in vert.
 print("starting_verts:", starting_verts)
 edges_of_verts = [edge for vert in starting_verts for edge in vert.link_edges]
 # only edges that are connected to at least one outside face are starting edges
-starting_edges = [edge for edge in edges_of_verts if len([face for face in edge.link_faces if not face.select]) > 0]
+starting_edges = []
+for vert in starting_verts:
+    # edges of vert that are connected to at least one outside face
+    edges_of_vert = [edge for edge in vert.link_edges if len([face for face in edge.link_faces if not face.select]) > 0]
+    
+    if len(edges_of_vert) == 1:
+        if edges_of_vert[0] not in starting_edges:
+            starting_edges.append(edges_of_vert[0])
+    elif len(edges_of_vert) == 2:
+        if edges_of_vert[0] not in starting_edges:
+            starting_edges.append(edges_of_vert[0])
+        if edges_of_vert[1] not in starting_edges:
+            starting_edges.append(edges_of_vert[1])
+    elif len(edges_of_vert) >= 3:
+        # to get more squarish mesh, only use edge that has the most outside faces connected to it
+        # get number of outside faces connected to each edge
+        num_outside_faces = [len([face for face in edge.link_faces if not face.select]) for edge in edges_of_vert]
+
+        # get index of edge with most outside faces
+        index = np.argmax(num_outside_faces)
+        if edges_of_vert[index] not in starting_edges:
+            starting_edges.append(edges_of_vert[index])
+
+
+
+
 # illegal edges are inside the selected faces and do not connect to any outside face
 illegal_edges = [edge for edge in edges_of_faces if len([face for face in edge.link_faces if not face.select]) == 0]
 # semi illegal edges are on edge of selected faces
@@ -322,7 +352,9 @@ semi_illegal_edges = [edge for edge in edges_of_faces if len([face for face in e
 avg_length = np.mean([edge.calc_length() for edge in starting_edges])
 
 
-
+####################
+# Loop edges connecting
+####################
 
 
 # get loops and decide which edges to connect
@@ -419,30 +451,15 @@ else:
     
 
 
+#####################
+# creating edges not in loops
+#####################
 
-
-
-
-edges_to_connect = [edge for edge in edges_of_verts if edge not in used_edges]
-
-print(len(edges_to_connect))
-
-class potential_edge:
-    def __init__(self, weight, v1, v2):
-        self.weight = weight
-        self.v1 = v1
-        self.v2 = v2
-
-    def __lt__(self, other):
-        return self.weight < other.weight
-
-# init priority queue
-import heapq
-pq = []
-heapq.heapify(pq)
+edges_to_connect = [edge for edge in starting_edges if edge not in used_edges]
 
 # matrix of distances
-distances_matrix = np.zeros((len(edges_to_connect), len(edges_to_connect)))
+weights_matrix = np.ones((len(edges_to_connect), len(edges_to_connect))) * (-1)
+edge_dict = {}
 
 for i in range(len(edges_to_connect)-1):
     for j in range(i+1, len(edges_to_connect)):
@@ -457,7 +474,6 @@ for i in range(len(edges_to_connect)-1):
         if v1 == v2:
             continue
 
-
         # check if v1 and v2 have an edge between them and this edge is in starting_edges
         # get all edges that are connected to v1 and are in starting_edges
         edges1 = [edge.other_vert(v1) for edge in v1.link_edges if edge in starting_edges]
@@ -465,41 +481,55 @@ for i in range(len(edges_to_connect)-1):
             # if v2 is in the list, we don't need to connect them
             continue
 
-        # check if weight is not 0
-        if weight == 0:
-            continue
+        # add to distances matrix
+        weights_matrix[i, j] = weight
+        edge_dict[(i, j)] = (v1, v2)
 
-        # add to priority queue
-        heapq.heappush(pq, potential_edge(weight, v1, v2))
+        print("weight: ", weight)
 
-        distances_matrix[i, j] = weight
-        distances_matrix[j, i] = weight 
+# get optimal combination of edges
+# use only one element from each row and column
+# Get the highest sum of weights
+# use scipy.optimize.linear_sum_assignment
+
+# get indices of best combination
+row_ind, col_ind = linear_sum_assignment(weights_matrix, maximize=True)
+
+print("weights_matrix: ", weights_matrix.shape)
+print(weights_matrix)
+print("row_ind: ", row_ind.shape)
+print(row_ind)
+print("col_ind: ", col_ind.shape)
+print(col_ind)
+
+print()
 
 used_dict = {}
 
-while len(pq) > 0:
-    # get best combination
-    edge_to_be = heapq.heappop(pq)
+for i in range(len(row_ind)):
+    if weights_matrix[row_ind[i], col_ind[i]] == -1:
+        used_dict[row_ind[i]] = True
+        used_dict[col_ind[i]] = True
+    #elif row_ind[i] not in used_dict and col_ind[i] not in used_dict:
+    else:
+        if (row_ind[i], col_ind[i]) in edge_dict:
+            v1, v2 = edge_dict[(row_ind[i], col_ind[i])]
+        elif (col_ind[i], row_ind[i]) in edge_dict:
+            v1, v2 = edge_dict[(col_ind[i], row_ind[i])]
+        else:
+            print("ERROR: ", row_ind[i], col_ind[i], weights_matrix[row_ind[i], col_ind[i]])
+
+        connecting_vertices.append([v1, v2])
+        used_dict[row_ind[i]] = True
+        used_dict[col_ind[i]] = True
+    
     
 
-    # check if vertices are already used
-    # if vert1 not in used_dict and vert2 not in used_dict:
-    if edge_to_be.v1 not in used_dict and edge_to_be.v2 not in used_dict:
-        print("adding edge")
-        used_dict[edge_to_be.v1] = True
-        used_dict[edge_to_be.v2] = True
-        connecting_vertices.append([edge_to_be.v1, edge_to_be.v2])
 
-    
-
-    
-
-
-
-
-
-
+################
 # add intersecting points
+################
+
 for i in range(len(connecting_vertices)-1):
     for j in range(i+1, len(connecting_vertices)):
         # get intersection of two edges
@@ -515,7 +545,11 @@ for i in range(len(connecting_vertices)-1):
             connecting_vertices[j].append(new_vert)
     
 
-# delete starting faces
+################
+# Build new mesh
+################
+
+# delete old starting faces
 bmesh.ops.delete(bm, geom=faces_selected, context="FACES")
 
 # create new edges
