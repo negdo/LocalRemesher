@@ -241,6 +241,8 @@ def closest_vertices(edge1, edge2):
     
 
 def edge_similarity_weight(edge1, edge2, avg_dist, avg_direction):
+    # higher weight is better
+
     # get vectors of the two edges
     edge1_vec = (edge1.verts[0].co - edge1.verts[1].co)/np.linalg.norm(edge1.verts[0].co - edge1.verts[1].co)
     edge2_vec = (edge2.verts[0].co - edge2.verts[1].co)/np.linalg.norm(edge2.verts[0].co - edge2.verts[1].co)
@@ -334,6 +336,7 @@ for edge in starting_edges:
         
         # start and end of loop are in starting edges, we will probbably want to connect them later
         if len(loop) > 2 and loop[-1] in starting_edges and loop[-1] not in used_edges and loop[-1] != loop[0]:
+
             
             
             # choose vertex that is in starting_verts and append tuple of both vertices
@@ -368,6 +371,19 @@ for edge in starting_edges:
                 v1, v2 = closest_vertices(edge, loop[-1])
 
 
+
+            if v1 == v2:
+                continue
+
+
+            # check if v1 and v2 have an edge between them and this edge is in starting_edges
+            # get all edges that are connected to v1 and are in starting_edges
+            edges1 = [edge.other_vert(v1) for edge in v1.link_edges if edge in starting_edges]
+            if v2 in edges1:
+                # if v2 is in the list, we don't need to connect them
+                continue
+
+            
             # add edge to used edges
             used_edges.append(loop[0])
             used_edges.append(loop[-1])
@@ -383,10 +399,25 @@ for edge in starting_edges:
 
 if len(connecting_vertices) > 0:
     # use average direction of already defined loops
-    avg_direction = np.mean(np.abs([(edge[0].co - edge[1].co) for edge in connecting_vertices]), axis=0)
+    avg_direction = np.mean([(edge[0].co - edge[1].co) for edge in connecting_vertices], axis=0)
+    print(avg_direction)
 else:
     # use average direction of starting edges
-    avg_direction = np.mean(np.abs([(edge.verts[0].co - edge.verts[1].co)//np.linalg.norm(edge.verts[0].co - edge.verts[1].co) for edge in starting_edges]), axis=0)
+    vectors = [(edge.verts[0].co - edge.verts[1].co) for edge in starting_edges]
+    normalized_vectors = vectors/np.linalg.norm(vectors, axis=1)[:, None]
+
+    preffered_direction = np.sum(np.abs(vectors), axis=0)
+
+    # normalize
+    preffered_direction = preffered_direction//np.linalg.norm(preffered_direction)
+
+    # use preffered direction to weight aveerage direction
+    weights = np.dot(normalized_vectors, preffered_direction)
+
+    avg_direction = np.sum(vectors*weights[:, None], axis=0)
+
+    
+
 
 
 
@@ -410,6 +441,9 @@ import heapq
 pq = []
 heapq.heapify(pq)
 
+# matrix of distances
+distances_matrix = np.zeros((len(edges_to_connect), len(edges_to_connect)))
+
 for i in range(len(edges_to_connect)-1):
     for j in range(i+1, len(edges_to_connect)):
         # get weight
@@ -420,8 +454,15 @@ for i in range(len(edges_to_connect)-1):
         if v1 not in starting_verts or v2 not in starting_verts:
             continue
 
-        # check if edge already exists
-        if v2 in v1.link_edges:
+        if v1 == v2:
+            continue
+
+
+        # check if v1 and v2 have an edge between them and this edge is in starting_edges
+        # get all edges that are connected to v1 and are in starting_edges
+        edges1 = [edge.other_vert(v1) for edge in v1.link_edges if edge in starting_edges]
+        if v2 in edges1:
+            # if v2 is in the list, we don't need to connect them
             continue
 
         # check if weight is not 0
@@ -430,6 +471,9 @@ for i in range(len(edges_to_connect)-1):
 
         # add to priority queue
         heapq.heappush(pq, potential_edge(weight, v1, v2))
+
+        distances_matrix[i, j] = weight
+        distances_matrix[j, i] = weight 
 
 used_dict = {}
 
