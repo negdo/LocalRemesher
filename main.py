@@ -318,8 +318,7 @@ illegal_edges = [edge for edge in edges_of_faces if len([face for face in edge.l
 semi_illegal_edges = [edge for edge in edges_of_faces if len([face for face in edge.link_faces if face.select]) > 0]
 # average length of starting edges
 avg_length = np.mean([edge.calc_length() for edge in starting_edges])
-# average direction of starting edges
-avg_direction = np.mean([(edge.verts[0].co - edge.verts[1].co)//np.linalg.norm(edge.verts[0].co - edge.verts[1].co) for edge in starting_edges], axis=0)
+
 
 
 
@@ -381,6 +380,17 @@ for edge in starting_edges:
 # vertices that are closer to each other have higher priority
 # calculate weight for each combination of edges
 # use priority queue to get the best combination
+
+if len(connecting_vertices) > 0:
+    # use average direction of already defined loops
+    avg_direction = np.mean(np.abs([(edge[0].co - edge[1].co) for edge in connecting_vertices]), axis=0)
+else:
+    # use average direction of starting edges
+    avg_direction = np.mean(np.abs([(edge.verts[0].co - edge.verts[1].co)//np.linalg.norm(edge.verts[0].co - edge.verts[1].co) for edge in starting_edges]), axis=0)
+
+
+
+
 
 edges_to_connect = [edge for edge in edges_of_verts if edge not in used_edges]
 
