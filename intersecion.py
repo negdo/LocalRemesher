@@ -37,7 +37,8 @@ def get_intersection(r1, q1, r2, q2):
         return None
 
     # return middle point
-    return (p1 + p2) / 2
+    ratio = (1 - 2*abs(t1-0.5)) / (1 - 2*abs(t2-0.5))
+    return p1 * ratio + p2 * (1-ratio)
 
 
 
