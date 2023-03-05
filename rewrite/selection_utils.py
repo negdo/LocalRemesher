@@ -57,12 +57,24 @@ def get_starting(faces_selected, verts_selected):
 
     return starting_edges, illegal_edges, avg_length
 
+def sort_vertices(vertices):
+    # sort vertices by location, first by x, then by y, then by z
+    vertices.sort(key=lambda vert: vert.co.z)
+    vertices.sort(key=lambda vert: vert.co.y)
+    vertices.sort(key=lambda vert: vert.co.x)
+
+    return vertices
+
+
+
+
+
 
 def get_triangles(edges):
     # go over all new edges
     # check all linked edges of each vertex of the edge
     # if sets of vertices of these edges have same vertex, then this is a triangle
-    triangles = []
+    triangles = set()
 
     for edge in edges:
         
@@ -76,14 +88,80 @@ def get_triangles(edges):
                     faces_1 = set(face for face in edge_1.link_faces)
                     faces_2 = set(face for face in edge_2.link_faces)
 
+                    triangle = tuple(sort_vertices([edge.verts[0], edge.verts[1], edge_2.other_vert(edge.verts[1])]))
+
                     # get intersection of faces, if there is none, we found empty triangle
                     if len(faces_0.intersection(faces_1, faces_2)) == 0:
-                        triangles.append([edge.verts[0], edge.verts[1], edge_2.other_vert(edge.verts[1])])
-                        edge.seam = True
-                        edge_1.seam = True
-                        edge_2.seam = True
+                        # check if triangle is not already in list
+                        
+                        if triangle not in triangles:
 
-    return triangles
+                            triangles.add(triangle)
+                            #edge.seam = True
+                            #edge_1.seam = True
+                            #edge_2.seam = True
+                        else:
+                            triangle = list(triangle)
+                            print("triangle duplicated in list", triangle[0].index, triangle[1].index, triangle[2].index)
+
+                    else:
+                        triangle = list(triangle)
+                        print("triangle already in mesh", triangle[0].index, triangle[1].index, triangle[2].index)
+
+
+    return list(triangles)
+
+
+    
+
+    
+
+# instead of directed edge rabim dajat ceu path na qeue
+
+
+def get_faces(edges):
+    # go over all new edges
+    # each can have max 2 faces
+    # for each face do bfs and find shortest cycle
+
+    edges_used = {edge: 0 for edge in edges}
+
+    faces = []
+
+    for edge in edges:
+        vert_path = set(edge.verts[0], edge.verts[1])
+
+        queue = [Directed_edge(edge, edge.verts[0])]
+        depth = 0
+
+        # BFS to find shortest cycle
+        while len(queue) > 0:
+            directed_edge = queue.pop(0)
+
+            # get all edges that are connected to vert
+            # check that edge is not used
+            edges1 = [edge2 for edge2 in directed_edge.vert.link_edges if len([face for face in edge2.link_faces]) + edges_used[edge2] <= 0]
+
+            # if any of edges closes the loop
+            for edge1 in edges1:
+                if edge1.other_vert(directed_edge.vert) in vert_path:
+                    # found face
+                    # get vertices
+                    vert_path.add(edge1.other_vert(directed_edge.vert))
+                    faces.append(vert_path)
+                    break
+            
+            # if no edges close the loop, go deeper
+            for edge1 in edges1:
+                queue.append(Directed_edge(edge1, edge1.other_vert(directed_edge.vert)))
+                edges_used[edge1] += 1
+        
+
+
+        
+
+
+
                 
 
 

@@ -28,8 +28,8 @@ def get_intersection(r1, q1, r2, q2):
 
     # if distance is more than minimum half of length of the lines, return None
     distance_ratio = 2*distance / min(np.linalg.norm(e1), np.linalg.norm(e2))
-    if distance_ratio > 0.5:
-        return None
+    #if distance_ratio > 0.5:
+    #    return None
 
     # calculate t1 and t2
     t1 = np.dot(np.cross(e2, n), (r2 - r1)) / np.dot(n, n)
@@ -47,8 +47,10 @@ def get_intersection(r1, q1, r2, q2):
     if 1 - 2 * abs(t1 - 0.5) * distance_ratio < 0 or 1 - 2 * abs(t2 - 0.5) * distance_ratio < 0:
         return None
     
-    # return middle point
-    return (p1 + p2) / 2
+    ratio = t1 / (t1 + t2)
+
+    # return point of intersection
+    return ratio * p1 + (1 - ratio) * p2
 
 
 # returns sorted list of vertices to get shortest path
@@ -103,48 +105,6 @@ def project_point_to_faces(point):
     return closest_point
 
 
-# merges vertices that are closer than distance
-def merge_by_distance(vertices, vertices_outside, distance, bm):
-    # verticecs - list of all vertices
-    # vertices_outside - set of vertices that are outside of the remesh area and should not be moved
-
-    # distance matrix
-    matrix = -np.ones((len(vertices), len(vertices)))
-    for i in range(len(vertices)-1):
-        for j in range(i+1, len(vertices)):
-            matrix[i][j] = np.linalg.norm(np.array(vertices[i].co) - np.array(vertices[j].co))
-
-    # get indices of vertices that are closer than distance
-    coords = np.argwhere(matrix < distance)
-
-    moved_vertices = set()
-
-    # not perfect, if there are more than 5 vertices, they could potentialy not be merged, if the order is not right
-    for x, y in coords:
-        if matrix[x][y] == -1:
-            continue
-        
-        outside1 = vertices[x] in vertices_outside or vertices[x] in vertices_outside
-        outside2 = vertices[y] in vertices_outside or vertices[y] in vertices_outside
-        # if both vertices are outside of the remesh area, skip
-        if outside1 and outside2:
-            continue
-        # if one of the vertices is outside, move the other to it
-        elif outside1:
-            vertices[y].co = vertices[x].co
-            moved_vertices.add(vertices[y])
-        elif outside2:
-            vertices[x].co = vertices[y].co
-            moved_vertices.add(vertices[x])
-        # if both vertices are inside, move them to the middle
-        else:
-            vertices[y].co = vertices[x].co
-            moved_vertices.add(vertices[x])
-            moved_vertices.add(vertices[y])
-            bmesh.ops.remove_doubles(bm, verts=[vertices[x], vertices[y]], dist=0.001)
-
-    
-    #bmesh.ops.remove_doubles(bm, verts=vertices, dist=0.001)
     
 
 

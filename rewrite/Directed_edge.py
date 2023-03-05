@@ -74,3 +74,58 @@ class Weighted_edge:
     def __lt__(self, other):
         return self.weight > other.weight
     
+
+class Weighted_triangle:
+
+    def __init__(self, triangle, avg_direction):
+        self.triangle = triangle
+        self.weights = self.get_dissolve_weight(triangle, avg_direction)
+        self.max_weight = max(self.weights)
+        self.max_edge = self.triangle.edges[self.weights.index(self.max_weight)]
+
+    
+    def get_dissolve_weight(self, triangle, avg_direction):
+        # get weight of each edge to be disolved
+        # higher weight means that edge will be disolved first
+        
+        weights = [0, 0, 0]
+        
+        for i in range(len(triangle.edges)):
+            edge = triangle.edges[i]
+            next_triangle = 0
+
+
+            # check if the other face is triangle
+            if len(edge.link_faces) == 2:
+                other_face = edge.link_faces[0] if edge.link_faces[0] != triangle else edge.link_faces[1]
+                if len(other_face.verts) == 3:
+                    # get angle between two triangles
+                    next_triangle = 1
+
+            # check angle to average direction
+            # higher is better
+            edge_vec = (edge.verts[0].co - edge.verts[1].co).normalized()
+            angle = abs(np.dot(avg_direction, edge_vec))
+            if angle < 0.5:
+                angle = 1 - angle
+            angle = 2*(angle - 0.5)
+
+            # calculate inside angle compared to other edges
+            other_edges = [edge_o for edge_o in triangle.edges if edge_o != edge]
+            other_edges_vec = [(edge_o.verts[0].co - edge_o.verts[1].co).normalized() for edge_o in other_edges]
+
+            other_edges_angle = abs(np.dot(other_edges_vec[0], edge_vec)) + abs(np.dot(other_edges_vec[1], edge_vec))
+            
+
+
+            # calculate weight
+            weights[i] = angle + next_triangle*edge.calc_length() + other_edges_angle
+
+        return weights
+    
+    def __lt__(self, other):
+        return self.max_weight > other.max_weight
+    
+
+        
+    

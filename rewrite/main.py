@@ -12,6 +12,7 @@ from other_utils import *
 from Directed_edge import *
 from loop_utils import *
 from building_utils import *
+from improving_utils import *
 
 ############## INIT #################################
 
@@ -108,7 +109,6 @@ used_edges = set()
 # get edges with highest weight from priority queue
 while len(pq) > 0:
     weighted_edge = heapq.heappop(pq)
-    print(weighted_edge.weight)
 
     # check if weight is 0
     if weighted_edge.weight == 0:
@@ -149,6 +149,7 @@ for i in range(len(connecting_vertices)-1):
 avg_new_edge_length = 0
 vertices = set()
 edges = []
+outside_vertices = set()
 
 # create new edges
 for i in range(len(connecting_vertices)):
@@ -156,15 +157,14 @@ for i in range(len(connecting_vertices)):
     path = shortest_path(connecting_vertices[i])
 
     for j in range(len(path)-1):
-        try:
-            edge = bm.edges.new((path[j], path[j+1]))
-            avg_new_edge_length += (path[j].co - path[j+1].co).length
-            vertices.add(path[j])
-            edges.append(edge)
-
-        except:
-            print("Edge already exists")
+        edge = bm.edges.new((path[j], path[j+1]))
+        avg_new_edge_length += (path[j].co - path[j+1].co).length
+        vertices.add(path[j])
+        edges.append(edge)
     vertices.add(path[-1])
+    outside_vertices.add(path[-1])
+    outside_vertices.add(path[0])
+    
 
 vertices = list(vertices)
 avg_new_edge_length /= len(connecting_vertices)
@@ -174,24 +174,39 @@ avg_new_edge_length /= len(connecting_vertices)
 bmesh.ops.remove_doubles(bm, verts=vertices, dist=avg_new_edge_length/8)
 
 # remove vertices that were merged from vertices list
-vertices = [v for v in vertices if v.is_valid]
+vertices = [v for v in vertices if v.is_valid and v not in outside_vertices]
 edges = [e for e in edges if e.is_valid]
+
+edges = list(set(edge for vert in vertices for edge in vert.link_edges))
 
 
 ############## IPROVE MESH ###########################
 
+# update indices of vertices
+
 # find all triangles
 triangles = get_triangles(edges)
 
+triangles_faces = []
 # fill triangles
 for triangle in triangles:
-    try:
-        bm.faces.new(triangle)
-    except:
-        print("Face already exists")
+    triangles_faces.append(bm.faces.new(triangle))
 
+# dissolve triangles, calculate weight of each edge in triangle
+pq = []
+heapq.heapify(pq)
 
+for triangle in triangles_faces:
+    heapq.heappush(pq, Weighted_triangle(triangle, avg_direction))
 
+# dissolve triangles with highest weight
+while len(pq) > 0:
+    weighted_triangle = heapq.heappop(pq)
+    # check if face is valid / still exists
+    if not weighted_triangle.triangle.is_valid:
+        continue
+    # dissolve triangle
+    bmesh.ops.delete(bm, geom=[weighted_triangle.max_edge], context="EDGES")
 
 
 
