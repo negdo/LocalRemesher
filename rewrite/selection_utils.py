@@ -102,11 +102,9 @@ def get_triangles(edges):
                             #edge_2.seam = True
                         else:
                             triangle = list(triangle)
-                            print("triangle duplicated in list", triangle[0].index, triangle[1].index, triangle[2].index)
 
                     else:
                         triangle = list(triangle)
-                        print("triangle already in mesh", triangle[0].index, triangle[1].index, triangle[2].index)
 
 
     return list(triangles)
@@ -129,32 +127,76 @@ def get_faces(edges):
     faces = []
 
     for edge in edges:
-        vert_path = set(edge.verts[0], edge.verts[1])
+        path = [edge]
 
-        queue = [Directed_edge(edge, edge.verts[0])]
+        queue = [(Directed_edge(edge, edge.verts[0]), path, 0)]
+        found = False
         depth = 0
 
         # BFS to find shortest cycle
-        while len(queue) > 0:
-            directed_edge = queue.pop(0)
+        while len(queue) > 0 and not found and depth < 10:
+            directed_edge, path, depth = queue.pop(0)
+            print("depth", depth, "path", path)
 
             # get all edges that are connected to vert
             # check that edge is not used
-            edges1 = [edge2 for edge2 in directed_edge.vert.link_edges if len([face for face in edge2.link_faces]) + edges_used[edge2] <= 0]
+            edges1 = []
+            for edge2 in directed_edge.vert.link_edges:
+                connected_faces = len([face for face in edge2.link_faces])
+                if edge2 in edges_used:
+                    connected_faces += edges_used[edge2]
+                if connected_faces <= 1:
+                    edges1.append(edge2)
+
+            print("edges1: ")
+            print(edges1)
+            #edges1 = [edge2 for edge2 in directed_edge.vert.link_edges if len([face for face in edge2.link_faces]) + edges_used[edge2] <= 1]
+            
 
             # if any of edges closes the loop
-            for edge1 in edges1:
-                if edge1.other_vert(directed_edge.vert) in vert_path:
-                    # found face
-                    # get vertices
-                    vert_path.add(edge1.other_vert(directed_edge.vert))
-                    faces.append(vert_path)
-                    break
+            if depth > 1:
+                for edge1 in edges1:
+                    if edge1 == path[0]:
+                        # found face
+                        found = True
+                        break
+
+            if not found:
+                # if no edges closes the loop, go deeper
+                for edge1 in edges1:
+                    if edge1.index not in path and edge1 != directed_edge.edge:
+                        print("edge1 not in path")
+                        temp_path = path.copy()
+                        temp_path.append(edge1)
+                        queue.append((Directed_edge(edge1, edge1.other_vert(directed_edge.vert)), temp_path, depth + 1))
+                    
+        
+
+        # if face was found, mark edges as used
+        if found:
+            face = set()
+            for edge1 in path:
+                face.add(edge1.verts[0])
+                face.add(edge1.verts[1])
+
+            print('face found', face)
+
             
-            # if no edges close the loop, go deeper
-            for edge1 in edges1:
-                queue.append(Directed_edge(edge1, edge1.other_vert(directed_edge.vert)))
-                edges_used[edge1] += 1
+            faces.append(face)
+
+
+            # mark edges as used
+            for edge1 in path:
+                if edge1 in edges_used:
+                    edges_used[edge1] += 1
+                else:
+                    edges_used[edge1] = 1
+        else:
+            print('no face found')
+
+            
+
+    return faces
         
 
 

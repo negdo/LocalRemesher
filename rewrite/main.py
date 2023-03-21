@@ -209,7 +209,19 @@ while len(pq) > 0:
     bmesh.ops.delete(bm, geom=[weighted_triangle.max_edge], context="EDGES")
 
 
+# update edges
+edges = [e for e in edges if e.is_valid]
 
+faces = get_faces(edges)
+
+# fill faces
+for face in faces:
+    print(face)
+    if len(face) < 3:
+        print("ERROR: face with less than 3 vertices")
+    else:
+        #bm.faces.new(face)
+        pass
 
 
 
