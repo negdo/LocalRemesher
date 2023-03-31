@@ -1,4 +1,7 @@
 import numpy as np
+from other_utils import *
+import math
+
 
 class Directed_edge:
 
@@ -36,6 +39,7 @@ class Weighted_edge:
 
     # calculates weight of how good would be edge between two vertices
     def edge_similarity_weight(self, edge1, edge2, avg_direction):
+        # start and end are edges, look at their direction ...
         # higher weight is better
 
         # get vectors of the two edges
@@ -69,7 +73,6 @@ class Weighted_edge:
         weight = angle * avg_angle_diff**2 * original_similarity
 
         return weight
-    
     
     def __lt__(self, other):
         return self.weight > other.weight
@@ -126,6 +129,36 @@ class Weighted_triangle:
     def __lt__(self, other):
         return self.max_weight > other.max_weight
     
+
+class Weighted_face:
+
+    def __init__(self, face):
+        self.face = face
+        self.weight = self.get_weight()
+
+    def get_weight(self):
+        # higher weight means face will be split first
+
+        area = self.face.calc_area()
+        if is_covex(self.face):
+            convex = 1
+        else:
+            convex = 100
+        
+        odd = (1 - (len(self.face.verts) % 2)) * 10
+        number_of_verts = len(self.face.verts)
+
+        return area * convex * odd * number_of_verts
+    
+    def __lt__(self, other):
+        return self.weight > other.weight
+
+
+
+
+
+
+
 
         
     

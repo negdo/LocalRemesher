@@ -110,11 +110,13 @@ def get_triangles(edges):
     return list(triangles)
 
 
-    
+def get_vertex_path(edge_path):
+    # get vertex path from edge path
+    vertex_path = [edge_path[0].verts[0]]
+    for edge in edge_path:
+        vertex_path.append(edge.other_vert(vertex_path[-1]))
 
-    
-
-# instead of directed edge rabim dajat ceu path na qeue
+    return vertex_path[:-1]
 
 
 def get_faces(edges):
@@ -122,79 +124,67 @@ def get_faces(edges):
     # each can have max 2 faces
     # for each face do bfs and find shortest cycle
 
-    edges_used = {edge: 0 for edge in edges}
+    edges_used = {}
+    for edge in edges:
+        edges_used[edge] = len(edge.link_faces)
 
     faces = []
 
+    queue = []
+
+    # initialize queue
     for edge in edges:
         path = [edge]
-
-        queue = [(Directed_edge(edge, edge.verts[0]), path, 0)]
-        found = False
         depth = 0
+        queue.append((edge.verts[1], path, depth))
 
-        # BFS to find shortest cycle
-        while len(queue) > 0 and not found and depth < 10:
-            directed_edge, path, depth = queue.pop(0)
-            print("depth", depth, "path", path)
 
+    
+
+    # BFS to find shortest cycle
+    while len(queue) > 0:
+        last_vertex, path, depth = queue.pop(0)
+        
+        if depth > 10:
+            break
+
+        elif last_vertex == path[0].verts[0]:
+            # found face
+
+            # check if edges are not used
+            used = False
+            for edge in path:
+                if edges_used[edge] > 1:
+                    used = True
+                    break
+
+            if not used:
+                # add face
+                faces.append(get_vertex_path(path))
+                for edge in path:
+                    edges_used[edge] += 1
+
+        else:
             # get all edges that are connected to vert
             # check that edge is not used
-            edges1 = []
-            for edge2 in directed_edge.vert.link_edges:
-                connected_faces = len([face for face in edge2.link_faces])
-                if edge2 in edges_used:
-                    connected_faces += edges_used[edge2]
-                if connected_faces <= 1:
-                    edges1.append(edge2)
-
-            print("edges1: ")
-            print(edges1)
-            #edges1 = [edge2 for edge2 in directed_edge.vert.link_edges if len([face for face in edge2.link_faces]) + edges_used[edge2] <= 1]
+            # edges_of_last_vertex = [edge for edge in last_vertex.link_edges if edge not in path and ((edge in edges_used and edges_used[edge] < 2) or (len(edge.link_faces) < 2))]
+            edges_of_last_vertex = []
+            for edge in last_vertex.link_edges:
+                if edge not in path:
+                    if edge in edges_used:
+                        if edges_used[edge] < 2:
+                            edges_of_last_vertex.append(edge)
+                    elif len(edge.link_faces) < 2:
+                        edges_of_last_vertex.append(edge)
+                        edges_used[edge] = len(edge.link_faces)
             
 
-            # if any of edges closes the loop
-            if depth > 1:
-                for edge1 in edges1:
-                    if edge1 == path[0]:
-                        # found face
-                        found = True
-                        break
-
-            if not found:
-                # if no edges closes the loop, go deeper
-                for edge1 in edges1:
-                    if edge1.index not in path and edge1 != directed_edge.edge:
-                        print("edge1 not in path")
-                        temp_path = path.copy()
-                        temp_path.append(edge1)
-                        queue.append((Directed_edge(edge1, edge1.other_vert(directed_edge.vert)), temp_path, depth + 1))
-                    
-        
-
-        # if face was found, mark edges as used
-        if found:
-            face = set()
-            for edge1 in path:
-                face.add(edge1.verts[0])
-                face.add(edge1.verts[1])
-
-            print('face found', face)
-
-            
-            faces.append(face)
-
-
-            # mark edges as used
-            for edge1 in path:
-                if edge1 in edges_used:
-                    edges_used[edge1] += 1
-                else:
-                    edges_used[edge1] = 1
-        else:
-            print('no face found')
-
-            
+            # add edges to queue
+            for edge in edges_of_last_vertex:
+                temp_path = path.copy()
+                temp_path.append(edge)
+                queue.append((edge.other_vert(last_vertex), temp_path, depth + 1))
+                
 
     return faces
         

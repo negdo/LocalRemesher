@@ -33,7 +33,7 @@ bm_for_convex.from_mesh(me)
 faces_selected, verts_selected = get_selected(bm_for_convex)
 
 # make the selection convex
-select_faces_inside_convex_hull(bm_for_convex, verts_selected, bm)
+# select_faces_inside_convex_hull(bm_for_convex, verts_selected, bm)
 
 # get selected faces and their vertices
 faces_selected, verts_selected = get_selected(bm)
@@ -213,16 +213,25 @@ while len(pq) > 0:
 edges = [e for e in edges if e.is_valid]
 
 faces = get_faces(edges)
+created_faces = []
 
 # fill faces
 for face in faces:
-    print(face)
     if len(face) < 3:
         print("ERROR: face with less than 3 vertices")
     else:
-        #bm.faces.new(face)
+        try:
+            new_face = bm.faces.new(face)
+            created_faces.append(new_face)
+        except Exception as e:
+            print("ERROR: could not create face")
+            print(e)
         pass
 
+
+# improve faces
+
+subdivide_faces_to_quads(bm, created_faces, avg_direction)
 
 
 ############## END #####################################

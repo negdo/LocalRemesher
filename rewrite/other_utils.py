@@ -119,3 +119,36 @@ def in_list_directed_edge(directed_edge, directed_edge_list):
             return True
 
     return False
+
+
+def is_covex(face):
+    print("face")
+    # check if face is convex
+    sign = 0
+    vertices = face.verts
+
+
+    
+    # check all angles, if any is greater than 180, return False
+    for i in range(len(vertices)):
+    
+        # get vectors of the two edges
+        edge1_vec = (vertices[i].co - vertices[(i+1) % len(vertices)].co).normalized()
+        edge2_vec = (vertices[(i+2) % len(vertices)].co - vertices[(i+1) % len(vertices)].co).normalized()
+
+        angle = np.arccos(np.dot(edge1_vec, edge2_vec))
+
+        if sign == 0:
+            sign = np.sign(np.cross(edge1_vec, edge2_vec)[2])
+        else:
+            if sign != np.sign(np.cross(edge1_vec, edge2_vec)[2]):
+                return False
+        
+
+        
+        
+        
+    return True
+
+
+
