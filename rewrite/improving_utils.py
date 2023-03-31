@@ -28,6 +28,8 @@ def get_edge_split_weight(face, start, end, avg_direction, direct_coords=False):
 
     # check if halffaces are convex
     # TODO
+
+    # check if half faces are planar
  
 
     return avg_angle_diff / dist
@@ -73,17 +75,20 @@ def split_face(bm, face, avg_direction):
     edge = edges["edges"][0]
     print("new edge: ", edge)
 
+    # if number of original faces was 7 or more, add another vertex in the middle
+    if full >= 7:
+        bmesh.ops.subdivide_edges(bm, edges=[edge], cuts=1, use_grid_fill=True)
+
     # return new faces
     return edge.link_faces[0], edge.link_faces[1]
 
 
 
-def split_5gon(bm, face, avg_direction):
+def convert_5gon_to_6gon(bm, face, avg_direction):
     # split 5gon in half
     # split on edge in the middle and connect with opposite vertex
     max_weight = 0
     subdivide_edge = None
-    opposite_vert = None
 
     for edge in face.edges:
         # find the middle point in current edge
@@ -97,7 +102,7 @@ def split_5gon(bm, face, avg_direction):
                     linked_edges_verts.add(vert)
         
         # find the opposite vertex
-        opposite_vert = [vert for vert in face.verts if vert not in linked_edges_verts]
+        opposite_vert = [vert for vert in face.verts if vert not in linked_edges_verts][0]
 
         # get weight of this edge
         weight = get_edge_split_weight(face, middle_point, opposite_vert.co, avg_direction, direct_coords=True)
@@ -105,29 +110,15 @@ def split_5gon(bm, face, avg_direction):
         if weight > max_weight:
             max_weight = weight
             subdivide_edge = edge
-            opposite_vert = opposite_vert
 
-
-    print("opposite_vert: ", opposite_vert)
-    print("valid: ", opposite_vert.is_valid)
     
     # subdivide edge
     edges = bmesh.ops.subdivide_edges(bm, edges=[subdivide_edge], cuts=1, use_grid_fill=True)
     new_vert = edges["geom_split"][0]
     changed_faces = new_vert.link_faces
 
-    print("new_vert: ", new_vert)
-    print("valid: ", new_vert.is_valid)
-    print("opposite_vert: ", opposite_vert)
-    print("valid: ", opposite_vert.is_valid)
-    
-
-    # connect new vert with opposite one
-    edges = bmesh.ops.connect_vert_pair(bm, verts=[new_vert, opposite_vert])
-    edge = edges["edges"][0]
-
-    # return new faces
-    return [face for face in changed_faces if face.is_valid]
+    # return faces neighboring new vert
+    return [face for face in changed_faces if face.is_valid] + [face]
 
 
 
@@ -138,6 +129,8 @@ def split_5gon(bm, face, avg_direction):
 def subdivide_faces_to_quads(bm, faces, avg_direction):
     print("subdivide_faces_to_quads")
     print("faces: ", faces)
+
+    created_faces = set(faces)
 
     queue = []
 
@@ -157,20 +150,60 @@ def subdivide_faces_to_quads(bm, faces, avg_direction):
         elif len(face.verts) == 5:
             # split one of the edges
             # connect new edge with opposite one
-            faces_to_update = split_5gon(bm, face, avg_direction)
+            faces_to_update = convert_5gon_to_6gon(bm, face, avg_direction)
             # add new split faces to queue
             for face in faces_to_update:
                 heapq.heappush(queue, Weighted_face(face))
+                created_faces.add(face)
         elif len(face.verts) > 5:
             # split face in half
             print("splitting face")
             faces_to_update = split_face(bm, face, avg_direction)
             for face in faces_to_update:
                 heapq.heappush(queue, Weighted_face(face))
+                created_faces.add(face)
         else:
             print("ERROR: face with less than 4 vertices")
 
+    
+    return [face for face in created_faces if face.is_valid]
+
         
+
+
+def relax_vertices(verts, iterations=1, translation_factor=0.1):
+    # make areas of faces more even
+
+    # do n iterations
+    for iter in range(iterations):
+
+        for vert in verts:
+            # for each vert get distances and vectors to all connected verts
+            vectors = []
+
+            # get vectors to all connected verts
+            for edge in vert.link_edges:
+                vectors.append(edge.other_vert(vert).co - vert.co)
+
+            # get average vector distance
+            avg_distance = np.average(np.array([vector.length for vector in vectors]))
+
+            # get translation vector
+            translation_vector = mathutils.Vector((0, 0, 0))
+
+            for vector in vectors:
+                local_translation_vector = vector.normalized()
+                local_translation_vector *= (vector.length - avg_distance) * translation_factor
+                print("local_translation_vector: ", local_translation_vector)
+                print("translation_vector: ", translation_vector)
+                translation_vector += local_translation_vector
+
+            # translate vert
+            vert.co += translation_vector
+
+
+
+
 
 
 

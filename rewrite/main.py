@@ -5,8 +5,16 @@ import mathutils
 from scipy.optimize import linear_sum_assignment
 import sys
 import heapq
+import os
+import pathlib
 
-sys.path.append("C:/Users/miham/Documents/3d/blender/scripts/local remesh/LocalRemesher/rewrite")
+# get file location
+syspath = os.path.abspath(__file__)
+syspath = pathlib.Path(syspath).parent.absolute()
+syspath = pathlib.Path(syspath).parent.absolute()
+syspath = str(syspath) + "\\rewrite"
+sys.path.append(syspath)
+
 from selection_utils import *
 from other_utils import *
 from Directed_edge import *
@@ -229,14 +237,29 @@ for face in faces:
         pass
 
 
-# improve faces
+# convert n-gons to quads
+created_faces = subdivide_faces_to_quads(bm, created_faces, avg_direction)
 
-subdivide_faces_to_quads(bm, created_faces, avg_direction)
+# look at pairs of quads and potentially change the splitting line
+#TODO
+
+print(created_faces)
+
+# get vertices
+vertices = list(set(vert for face in created_faces for vert in face.verts))
+# relax vertices to get more even mesh
+relax_vertices(vertices, 10, 0.01)
+
+# project vertices to original mesh uing interpolation
+#TODO
+
+
 
 
 ############## END #####################################
 
-sys.path.remove("C:/Users/miham/Documents/3d/blender/scripts/local remesh/LocalRemesher/rewrite")
+
+sys.path.remove(syspath)
 del sys.modules["selection_utils"]
 del sys.modules["other_utils"]
 del sys.modules["Directed_edge"]
