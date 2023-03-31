@@ -97,8 +97,7 @@ def split_5gon(bm, face, avg_direction):
                     linked_edges_verts.add(vert)
         
         # find the opposite vertex
-        opposite_vert = [vert for vert in face.verts if vert not in linked_edges_verts][0]
-
+        opposite_vert = [vert for vert in face.verts if vert not in linked_edges_verts]
 
         # get weight of this edge
         weight = get_edge_split_weight(face, middle_point, opposite_vert.co, avg_direction, direct_coords=True)
@@ -121,8 +120,6 @@ def split_5gon(bm, face, avg_direction):
     print("valid: ", new_vert.is_valid)
     print("opposite_vert: ", opposite_vert)
     print("valid: ", opposite_vert.is_valid)
-    
-
     
 
     # connect new vert with opposite one
