@@ -38,6 +38,7 @@ bm_proj2.from_mesh(me)
 
 
 ############## SELECTION ############################
+print("### SELECTION ###")
 
 # get selected faces and their vertices for convex mesh
 faces_selected, verts_selected = get_selected(bm_for_convex)
@@ -54,6 +55,7 @@ starting_edges, illegal_edges, avg_length = get_starting(faces_selected, verts_s
 
 
 ############## LOOPS SEARCH ############################
+print("### LOOPS SEARCH ###")
 
 # pairs of vertices that will be connected to new edges
 connecting_vertices = []
@@ -80,6 +82,7 @@ for edge in starting_edges:
 
 
 ############## DEFINE EDGE FLOW DIRECTION ##############
+print("### DEFINE EDGE FLOW DIRECTION ###")
 
 # TODO: make better algorithm for defining edge flow direction
 # could use best weighted loop, comparing angle of continuation edges
@@ -97,6 +100,7 @@ bmesh.ops.delete(bm, geom=faces_selected, context="FACES")
 
 
 ############## CONNECTING OTHER VERTICES ###############
+print("### CONNECTING OTHER VERTICES ###")
 
 # edges that are facing the avg_direction (or perpendicular) have higher priority
 # calculate weight for each combination of edges
@@ -137,6 +141,7 @@ while len(pq) > 0:
 
 
 ############## ITERSECTING POINTS #####################
+print("### INTERSECTING POINTS ###")
 
 # innit new bmesh for projection
 me = bpy.context.object.data
@@ -161,6 +166,7 @@ for i in range(len(connecting_vertices)-1):
 
 
 ############## BUILDING MESH #########################
+print("### BUILDING MESH ###")
 
 avg_new_edge_length = 0
 vertices = set()
@@ -197,6 +203,7 @@ edges = list(set(edge for vert in vertices for edge in vert.link_edges))
 
 
 ############## IPROVE MESH ###########################
+print("### IMPROVE MESH ###")
 
 # update indices of vertices
 
@@ -242,27 +249,27 @@ for face in faces:
         except Exception as e:
             print("ERROR: could not create face")
             print(e)
-        pass
-
 
 # convert n-gons to quads
 created_faces = subdivide_faces_to_quads(bm, created_faces, avg_direction)
 
-# look at pairs of quads and potentially change the splitting line
-#TODO
-
-print(created_faces)
-
 # get vertices
 vertices = list(set(vert for face in created_faces for vert in face.verts))
+
+# look at pairs of quads and potentially change the splitting line
+improve_edge_flow_direction(bm, vertices)
+
+vertices = [v for v in vertices if v.is_valid]
+
 # relax vertices to get more even mesh
 relax_vertices(vertices, 10, 10)
 
 
+# straiten loops
+
+
 # project vertices to original mesh uing interpolation
-print("preparing bmesh for projection")
 projection_tree = preprate_bm_for_projection(bm_proj2, subdiv=1, delete_faces=False)
-print("projecting vertices")
 for vert in vertices:
     vert.co = project_point_to_faces(projection_tree, vert.co, bm_proj2)
 
