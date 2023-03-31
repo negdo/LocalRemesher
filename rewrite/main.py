@@ -33,6 +33,8 @@ bm = bmesh.new()
 bm.from_mesh(me)
 bm_for_convex = bmesh.new()
 bm_for_convex.from_mesh(me)
+bm_proj2 = bmesh.new()
+bm_proj2.from_mesh(me)
 
 
 ############## SELECTION ############################
@@ -136,6 +138,12 @@ while len(pq) > 0:
 
 ############## ITERSECTING POINTS #####################
 
+# innit new bmesh for projection
+me = bpy.context.object.data
+bm_proj = bmesh.new()
+bm_proj.from_mesh(me)
+projection_tree = preprate_bm_for_projection(bm_proj, subdiv=0, delete_faces=True)
+
 # check intersection between each pair of lines
 for i in range(len(connecting_vertices)-1):
     for j in range(i+1, len(connecting_vertices)):
@@ -144,7 +152,7 @@ for i in range(len(connecting_vertices)-1):
 
         if intersect is not None:
             # project the point on original mesh
-            intersect = project_point_to_faces(intersect)
+            intersect = project_point_to_faces(projection_tree, intersect, bm_proj)
 
             # create new vertex
             new_vert = bm.verts.new(intersect)
@@ -248,11 +256,15 @@ print(created_faces)
 # get vertices
 vertices = list(set(vert for face in created_faces for vert in face.verts))
 # relax vertices to get more even mesh
-relax_vertices(vertices, 10, 0.01)
+relax_vertices(vertices, 10, 10)
+
 
 # project vertices to original mesh uing interpolation
-#TODO
-
+print("preparing bmesh for projection")
+projection_tree = preprate_bm_for_projection(bm_proj2, subdiv=1, delete_faces=False)
+print("projecting vertices")
+for vert in vertices:
+    vert.co = project_point_to_faces(projection_tree, vert.co, bm_proj2)
 
 
 

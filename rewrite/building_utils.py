@@ -78,29 +78,41 @@ def shortest_path(vertices):
     return path
 
 
-# projects point to original mesh, closest face
-def project_point_to_faces(point):
-    point = mathutils.Vector(point)
-    # init new bmesh
-    me = bpy.context.object.data
-    bm = bmesh.new()
-    bm.from_mesh(me)
-
+def preprate_bm_for_projection(bm, subdiv=0, delete_faces=True):
     # delete all faces that are not selected from bmesh
-    faces = [face for face in bm.faces if not face.select]
-    bmesh.ops.delete(bm, geom=faces, context="FACES")
+    if delete_faces:
+        faces = [face for face in bm.faces if not face.select]
+        bmesh.ops.delete(bm, geom=faces, context="FACES")
 
     # triangulate faces
-    triangulated = bmesh.ops.triangulate(bm, faces=bm.faces, quad_method="SHORT_EDGE")
-    tris = triangulated["faces"]
+    bmesh.ops.triangulate(bm, faces=bm.faces, quad_method="SHORT_EDGE")
+
+    # subdivide faces
+    if subdiv > 0:
+        bmesh.ops.subdivide_edges(bm, edges=bm.edges, cuts=subdiv, use_grid_fill=True, smooth=1)
+
+    # ensure local table is up to date
+    bm.verts.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+
+    vertices = [v.co for v in bm.verts]
+    polygons = [[v.index for v in f.verts] for f in bm.faces]
+
+    # build bvh tree
+    bvh_tree = mathutils.bvhtree.BVHTree.FromPolygons(vertices, polygons, all_triangles=True)
+
+    return bvh_tree
+
+# projects point to original mesh, closest face
+def project_point_to_faces(bvh_tree, point, bm):
+    point = mathutils.Vector(point)
 
     # find closest face
-    distances = [np.linalg.norm(face.calc_center_median() - point) for face in tris]
-    index = np.argmin(distances)
-    closest_face = tris[index]
+    closest_face = bvh_tree.find_nearest(point)[2]
+    closest_face = bm.faces[closest_face].verts
 
     # get closest point on face
-    closest_point = mathutils.geometry.closest_point_on_tri(point, closest_face.verts[0].co, closest_face.verts[1].co, closest_face.verts[2].co)
+    closest_point = mathutils.geometry.closest_point_on_tri(point, closest_face[0].co, closest_face[1].co, closest_face[2].co)
 
     return closest_point
 

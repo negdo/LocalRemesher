@@ -122,12 +122,9 @@ def in_list_directed_edge(directed_edge, directed_edge_list):
 
 
 def is_covex(face):
-    print("face")
     # check if face is convex
     sign = 0
     vertices = face.verts
-
-
     
     # check all angles, if any is greater than 180, return False
     for i in range(len(vertices)):
@@ -143,10 +140,6 @@ def is_covex(face):
         else:
             if sign != np.sign(np.cross(edge1_vec, edge2_vec)[2]):
                 return False
-        
-
-        
-        
         
     return True
 

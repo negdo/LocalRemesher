@@ -72,6 +72,8 @@ def split_face(bm, face, avg_direction):
 
     # create new edge and split face
     edges = bmesh.ops.connect_vert_pair(bm, verts=splitting_edge)
+    if len(edges["edges"]) == 0:
+        return None, None
     edge = edges["edges"][0]
     print("new edge: ", edge)
 
@@ -127,8 +129,6 @@ def convert_5gon_to_6gon(bm, face, avg_direction):
 
 
 def subdivide_faces_to_quads(bm, faces, avg_direction):
-    print("subdivide_faces_to_quads")
-    print("faces: ", faces)
 
     created_faces = set(faces)
 
@@ -142,7 +142,6 @@ def subdivide_faces_to_quads(bm, faces, avg_direction):
 
     while len(queue) > 0:
         weighted_face = heapq.heappop(queue)
-        print("weighted_face: ", weighted_face.face.index, len(weighted_face.face.verts))
         face = weighted_face.face
 
         if len(face.verts) == 4:
@@ -153,13 +152,16 @@ def subdivide_faces_to_quads(bm, faces, avg_direction):
             faces_to_update = convert_5gon_to_6gon(bm, face, avg_direction)
             # add new split faces to queue
             for face in faces_to_update:
+                if face is None:
+                    continue
                 heapq.heappush(queue, Weighted_face(face))
                 created_faces.add(face)
         elif len(face.verts) > 5:
             # split face in half
-            print("splitting face")
             faces_to_update = split_face(bm, face, avg_direction)
             for face in faces_to_update:
+                if face is None:
+                    continue
                 heapq.heappush(queue, Weighted_face(face))
                 created_faces.add(face)
         else:
@@ -171,35 +173,74 @@ def subdivide_faces_to_quads(bm, faces, avg_direction):
         
 
 
-def relax_vertices(verts, iterations=1, translation_factor=0.1):
+def relax_vertices(all_verts, iterations=1, translation_factor=0.1):
+    # get all iner verts that will be moved
+    verts = []
+    for vert in all_verts:
+        out_verts_number = len([edge.other_vert(vert) for edge in vert.link_edges if edge.other_vert(vert) not in all_verts])
+        if out_verts_number == 0:
+            verts.append(vert)
+
     # make areas of faces more even
+    edges = set(edge for vert in verts for edge in vert.link_edges)
 
     # do n iterations
     for iter in range(iterations):
 
+        distances = [edge.calc_length() for edge in edges]
+        global_avg_distance = sum(distances) / len(distances)
+
         for vert in verts:
             # for each vert get distances and vectors to all connected verts
             vectors = []
+            skip = False
 
             # get vectors to all connected verts
-            for edge in vert.link_edges:
-                vectors.append(edge.other_vert(vert).co - vert.co)
+            connected_verts = set(edge.other_vert(vert) for edge in vert.link_edges)
+            for temp_vert in connected_verts:
+                vectors.append(temp_vert.co - vert.co)
+
+
+            # get vertices of connected faces
+            verts_of_connected_faces = set(vert for face in vert.link_faces for vert in face.verts if vert not in connected_verts)
+
+            # get vectors to all vertices of connected faces
+            # scale them by 1/sqrt(2)
+            for temp_vert in verts_of_connected_faces:
+                vectors.append((temp_vert.co - vert.co) / math.sqrt(2))
+            
 
             # get average vector distance
-            avg_distance = np.average(np.array([vector.length for vector in vectors]))
+            avg_distance = np.average(np.array([vector.length for vector in vectors])) + global_avg_distance*0.01
+            global_diffence = abs(global_avg_distance - avg_distance) + avg_distance*0.01
 
             # get translation vector
             translation_vector = mathutils.Vector((0, 0, 0))
 
             for vector in vectors:
-                local_translation_vector = vector.normalized()
-                local_translation_vector *= (vector.length - avg_distance) * translation_factor
-                print("local_translation_vector: ", local_translation_vector)
-                print("translation_vector: ", translation_vector)
-                translation_vector += local_translation_vector
+                translation_vector += vector.normalized() * (vector.length - avg_distance) * translation_factor * global_diffence
+
+            # count number of convex neighbor faces
+            convex_faces = 0
+            for face in vert.link_faces:
+                if is_covex(face):
+                    convex_faces += 1
 
             # translate vert
             vert.co += translation_vector
+
+            # count number of convex neighbor faces after translation
+            convex_faces_after = 0
+            for face in vert.link_faces:
+                if is_covex(face):
+                    convex_faces_after += 1
+            
+            # if number of convex faces is lower, revert translation
+            if convex_faces_after < convex_faces:
+                vert.co -= translation_vector
+
+
+
 
 
 
