@@ -121,10 +121,13 @@ def in_list_directed_edge(directed_edge, directed_edge_list):
     return False
 
 
-def is_covex(face):
+def is_covex(face, verts_bool=False):
     # check if face is convex
     sign = 0
-    vertices = face.verts
+    if verts_bool:
+        vertices = face
+    else:
+        vertices = face.verts
     
     # check all angles, if any is greater than 180, return False
     for i in range(len(vertices)):
@@ -132,8 +135,6 @@ def is_covex(face):
         # get vectors of the two edges
         edge1_vec = (vertices[i].co - vertices[(i+1) % len(vertices)].co).normalized()
         edge2_vec = (vertices[(i+2) % len(vertices)].co - vertices[(i+1) % len(vertices)].co).normalized()
-
-        angle = np.arccos(np.dot(edge1_vec, edge2_vec))
 
         if sign == 0:
             sign = np.sign(np.cross(edge1_vec, edge2_vec)[2])
@@ -145,3 +146,26 @@ def is_covex(face):
 
 
 
+def define_average_direction(edges):
+    # make matrix of cosine distances between edges
+    matrix = np.zeros((len(edges), len(edges)))
+    for i in range(len(edges)):
+        for j in range(len(edges)):
+            edge1_vec = (edges[i].edge.verts[0].co - edges[i].edge.verts[1].co).normalized()
+            edge2_vec = (edges[j].edge.verts[0].co - edges[j].edge.verts[1].co).normalized()
+            matrix[i, j] = np.abs(np.dot(edge1_vec, edge2_vec))
+            # adjusted cosine distance, that equaly weights 0, 90 and 180 degrees
+            if matrix[i, j] < 0.5:
+                matrix[i, j] = 1 - matrix[i, j]
+    
+    # find the highest sum of cosine distances of one edge
+    max_sum = 0
+    max_index = 0
+    for i in range(len(edges)):
+        sum = np.sum(matrix[i, :])
+        if sum > max_sum:
+            max_sum = sum
+            max_index = i
+    
+    # return average direction - vector of edge on index max_index
+    return (edges[max_index].edge.verts[0].co - edges[max_index].edge.verts[1].co).normalized()

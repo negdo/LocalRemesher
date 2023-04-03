@@ -61,6 +61,7 @@ print("### LOOPS SEARCH ###")
 connecting_vertices = []
 used_edges = []
 
+
 # for each edge look for loop ending in another starting edge
 for edge in starting_edges:
     if edge not in used_edges:
@@ -80,19 +81,15 @@ for edge in starting_edges:
                     connecting_vertices.append([edge.vert, end.vert])
 
 
-
 ############## DEFINE EDGE FLOW DIRECTION ##############
 print("### DEFINE EDGE FLOW DIRECTION ###")
 
-# TODO: make better algorithm for defining edge flow direction
-# could use best weighted loop, comparing angle of continuation edges
 if len(connecting_vertices) > 0:
     # use average direction of already defined loops
-    avg_direction = connecting_vertices[0][1].co - connecting_vertices[0][0].co
-    avg_direction.normalized()
+    avg_direction = (connecting_vertices[0][1].co - connecting_vertices[0][0].co).normalized()
 else:
     # use average direction of starting edges
-    avg_direction = starting_edges[0].edge.verts[0].co - starting_edges[0].edge.verts[1].co
+    avg_direction = define_average_direction(starting_edges)
 
 
 # delete old faces
@@ -106,6 +103,8 @@ print("### CONNECTING OTHER VERTICES ###")
 # calculate weight for each combination of edges
 
 edges_to_connect = [edge for edge in starting_edges if edge not in used_edges]
+# sort edges_to_connect by index of edge
+edges_to_connect.sort(key=lambda x: x.edge.index)
 
 # init priority queue
 pq = []
@@ -138,8 +137,6 @@ while len(pq) > 0:
 
 
 
-
-
 ############## ITERSECTING POINTS #####################
 print("### INTERSECTING POINTS ###")
 
@@ -166,6 +163,8 @@ for i in range(len(connecting_vertices)-1):
 
 
 ############## BUILDING MESH #########################
+
+
 print("### BUILDING MESH ###")
 
 avg_new_edge_length = 0
@@ -195,25 +194,31 @@ avg_new_edge_length /= len(connecting_vertices)
 # merge vertices by distance
 bmesh.ops.remove_doubles(bm, verts=vertices, dist=avg_new_edge_length/8)
 
+bm.edges.ensure_lookup_table()
+bm.verts.ensure_lookup_table()
+
 # remove vertices that were merged from vertices list
 vertices = [v for v in vertices if v.is_valid and v not in outside_vertices]
-edges = [e for e in edges if e.is_valid]
 
 edges = list(set(edge for vert in vertices for edge in vert.link_edges))
+
+
 
 
 ############## IPROVE MESH ###########################
 print("### IMPROVE MESH ###")
 
-# update indices of vertices
+# find all triangles, empty and already filled triangles
+triangles, triangles_faces = get_triangles(edges)
 
-# find all triangles
-triangles = get_triangles(edges)
-
-triangles_faces = []
-# fill triangles
+# fill triangles list with new faces
 for triangle in triangles:
     triangles_faces.append(bm.faces.new(triangle))
+
+bm.edges.ensure_lookup_table()
+bm.verts.ensure_lookup_table()
+bm.faces.ensure_lookup_table()
+
 
 # dissolve triangles, calculate weight of each edge in triangle
 pq = []
@@ -231,6 +236,8 @@ while len(pq) > 0:
     # dissolve triangle
     bmesh.ops.delete(bm, geom=[weighted_triangle.max_edge], context="EDGES")
 
+bm.edges.ensure_lookup_table()
+bm.verts.ensure_lookup_table()
 
 # update edges
 edges = [e for e in edges if e.is_valid]
@@ -250,30 +257,39 @@ for face in faces:
             print("ERROR: could not create face")
             print(e)
 
+bm.faces.ensure_lookup_table()
+bm.faces.index_update()
+
 # convert n-gons to quads
 created_faces = subdivide_faces_to_quads(bm, created_faces, avg_direction)
 
+
+
 # get vertices
-vertices = list(set(vert for face in created_faces for vert in face.verts))
+vertices = list(set(vert for face in created_faces for vert in face.verts if vert.is_valid))
+
 
 # look at pairs of quads and potentially change the splitting line
-improve_edge_flow_direction(bm, vertices)
+improve_edge_flow_direction(bm, vertices, avg_direction)
 
-vertices = [v for v in vertices if v.is_valid]
 
 # relax vertices to get more even mesh
+vertices = [v for v in vertices if v.is_valid]
 relax_vertices(vertices, 10, 10)
 
-
+"""
 # straiten loops
-
+# TODO
 
 # project vertices to original mesh uing interpolation
 projection_tree = preprate_bm_for_projection(bm_proj2, subdiv=1, delete_faces=False)
 for vert in vertices:
     vert.co = project_point_to_faces(projection_tree, vert.co, bm_proj2)
 
+# recalculate normals
+bmesh.ops.recalc_face_normals(bm, faces=[face for face in created_faces if face.is_valid])
 
+"""
 
 ############## END #####################################
 

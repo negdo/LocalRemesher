@@ -2,6 +2,8 @@ import numpy as np
 from other_utils import *
 import math
 
+from other_utils import *
+
 
 class Directed_edge:
 
@@ -95,34 +97,39 @@ class Weighted_triangle:
         
         for i in range(len(triangle.edges)):
             edge = triangle.edges[i]
-            next_triangle = 0
-
+            next_triangle = 0.01
 
             # check if the other face is triangle
             if len(edge.link_faces) == 2:
                 other_face = edge.link_faces[0] if edge.link_faces[0] != triangle else edge.link_faces[1]
                 if len(other_face.verts) == 3:
-                    # get angle between two triangles
                     next_triangle = 1
 
+                    # check if new quad would be convex
+                    quad_verts = list(set(list(triangle.verts) + list(other_face.verts)))
+                    if is_covex(quad_verts, verts_bool=True):
+                        next_triangle = 10
+
             # check angle to average direction
-            # higher is better
             edge_vec = (edge.verts[0].co - edge.verts[1].co).normalized()
             angle = abs(np.dot(avg_direction, edge_vec))
             if angle < 0.5:
                 angle = 1 - angle
             angle = 2*(angle - 0.5)
+            # we want to dissolve edges that don't match average direction
+            angle = 1 - angle
 
-            # calculate inside angle compared to other edges
-            other_edges = [edge_o for edge_o in triangle.edges if edge_o != edge]
-            other_edges_vec = [(edge_o.verts[0].co - edge_o.verts[1].co).normalized() for edge_o in other_edges]
+            # calculate edges length ratio, we want to dissolve longer edges more
+            edge_length = edge.calc_length()
+            other_edges_length = 0
+            for other_edge in triangle.edges:
+                if other_edge != edge:
+                    other_edges_length += other_edge.calc_length()
 
-            other_edges_angle = abs(np.dot(other_edges_vec[0], edge_vec)) + abs(np.dot(other_edges_vec[1], edge_vec))
-            
-
+            edge_length_ratio = edge_length / other_edges_length
 
             # calculate weight
-            weights[i] = angle + next_triangle*edge.calc_length() + other_edges_angle
+            weights[i] = angle * next_triangle * edge_length_ratio
 
         return weights
     

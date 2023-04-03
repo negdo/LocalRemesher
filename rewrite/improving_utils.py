@@ -27,15 +27,34 @@ def get_edge_split_weight(face, start, end, avg_direction, direct_coords=False):
     avg_angle_diff = (avg_angle_diff - 0.5) * 5
 
     # check if halffaces are convex
-    # TODO
+    face_verts = list(face.verts)
+    half1 = []
+    half2 = []
+    stage = 0
 
-    # check if half faces are planar
- 
+    for i in range(len(face_verts)):
+        if stage == 0:
+            if face_verts[i] == start:
+                stage = 1
+            else:
+                half1.append(face_verts[i])
+        elif stage == 1:
+            if face_verts[i] == end:
+                stage = 2
+            else:
+                half2.append(face_verts[i])
+        elif stage == 2:
+            half1.append(face_verts[i])
 
-    return avg_angle_diff / dist
 
-    
+    convex_weight = 1
+    if is_covex(half1, verts_bool=True):
+        convex_weight *= 10
+    if is_covex(half2, verts_bool=True):
+        convex_weight *= 10
 
+    return avg_angle_diff * convex_weight / dist
+    #return avg_angle_diff / dist
 
 
 
@@ -70,16 +89,20 @@ def split_face(bm, face, avg_direction):
                 max_weight = weight
                 splitting_edge = (face.verts[i], face.verts[(i+half+1) % full])
 
+
     # create new edge and split face
     edges = bmesh.ops.connect_vert_pair(bm, verts=splitting_edge)
+    
+
     if len(edges["edges"]) == 0:
         return None, None
     edge = edges["edges"][0]
-    print("new edge: ", edge)
+    update_elements(edge)
 
     # if number of original faces was 7 or more, add another vertex in the middle
     if full >= 7:
         bmesh.ops.subdivide_edges(bm, edges=[edge], cuts=1, use_grid_fill=True)
+        update_elements(edges)
 
     # return new faces
     return edge.link_faces[0], edge.link_faces[1]
@@ -96,6 +119,8 @@ def convert_5gon_to_6gon(bm, face, avg_direction):
         # find the middle point in current edge
         middle_point = (edge.verts[0].co + edge.verts[1].co) / 2
 
+        update_elements(edge)
+
         # find the opposite vertex
         linked_edges_verts = set()
         for vert in edge.verts:
@@ -104,7 +129,13 @@ def convert_5gon_to_6gon(bm, face, avg_direction):
                     linked_edges_verts.add(vert)
         
         # find the opposite vertex
-        opposite_vert = [vert for vert in face.verts if vert not in linked_edges_verts][0]
+        opposite_vert = [vert for vert in face.verts if vert not in linked_edges_verts]
+        if len(opposite_vert) != 1:
+            print("ERROR: opposite vert not found")
+            continue
+        else:
+            opposite_vert = opposite_vert[0]
+
 
         # get weight of this edge
         weight = get_edge_split_weight(face, middle_point, opposite_vert.co, avg_direction, direct_coords=True)
@@ -116,15 +147,12 @@ def convert_5gon_to_6gon(bm, face, avg_direction):
     
     # subdivide edge
     edges = bmesh.ops.subdivide_edges(bm, edges=[subdivide_edge], cuts=1, use_grid_fill=True)
+    update_elements(edges)
     new_vert = edges["geom_split"][0]
     changed_faces = new_vert.link_faces
 
     # return faces neighboring new vert
     return [face for face in changed_faces if face.is_valid] + [face]
-
-
-
-    
 
 
 
@@ -143,24 +171,30 @@ def subdivide_faces_to_quads(bm, faces, avg_direction):
     while len(queue) > 0:
         weighted_face = heapq.heappop(queue)
         face = weighted_face.face
-
-        if len(face.verts) == 4:
+        if not face.is_valid:
+            print("ERROR: invalid face")
+            continue
+        elif len(face.verts) == 4:
             continue
         elif len(face.verts) == 5:
             # split one of the edges
             # connect new edge with opposite one
             faces_to_update = convert_5gon_to_6gon(bm, face, avg_direction)
+            bm.faces.ensure_lookup_table()
             # add new split faces to queue
             for face in faces_to_update:
                 if face is None:
+                    print("ERROR: face is None")
                     continue
                 heapq.heappush(queue, Weighted_face(face))
                 created_faces.add(face)
         elif len(face.verts) > 5:
             # split face in half
             faces_to_update = split_face(bm, face, avg_direction)
+            bm.faces.ensure_lookup_table()
             for face in faces_to_update:
                 if face is None:
+                    print("ERROR: face is None, >5")
                     continue
                 heapq.heappush(queue, Weighted_face(face))
                 created_faces.add(face)
@@ -169,8 +203,7 @@ def subdivide_faces_to_quads(bm, faces, avg_direction):
 
     
     return [face for face in created_faces if face.is_valid]
-
-        
+       
 
 
 def relax_vertices(all_verts, iterations=1, translation_factor=0.1):
@@ -239,8 +272,19 @@ def relax_vertices(all_verts, iterations=1, translation_factor=0.1):
             if convex_faces_after < convex_faces:
                 vert.co -= translation_vector
 
+def update_elements(elements):
+    try:
+        elements.index_update()
+    except:
+        pass
+    try:
+        elements.ensure_lookup_table()
+    except:
+        pass
 
-def improve_edge_flow_direction(bm, all_verts):
+
+
+def improve_edge_flow_direction(bm, all_verts, avg_direction):
     # find verts with only two edges, they maybe should be split differently
 
     # get all iner verts that will be checked
@@ -248,49 +292,125 @@ def improve_edge_flow_direction(bm, all_verts):
     for vert in all_verts:
         out_verts_number = len([edge.other_vert(vert) for edge in vert.link_edges if edge.other_vert(vert) not in all_verts])
         if out_verts_number == 0:
+            update_elements(vert)
             verts.append(vert)
 
     
     for vert in verts:
+        if not vert.is_valid:
+            print("ERROR: vert not valid")
+            continue
         # check if vert has only two edges
         if len(vert.link_edges) == 2:
-            # get angle between edges
-            angle = vert.link_loops[0].calc_angle()
+            # get neighbor faces
+            update_elements(vert.link_edges)
 
-            # if angle is close to 180, join the neighboring faces and remove the vert
-            if abs(angle - math.pi) < 0.5:
-                # get neighbor faces
-                linked_faces = [face for face in vert.link_faces]
+            linked_faces = [face for face in vert.link_faces if face.is_valid]
+            update_elements(linked_faces)
+            update_elements(vert)
+            linked_faces = [face for face in linked_faces if face.is_valid]
 
-                # check that linked faces is list and has two elements
-                if len(linked_faces) != 2:
-                    print("ERROR: not two faces linked to vert or not list")
-                    continue
+            # check that linked faces is list and has two elements
+            if len(linked_faces) != 2:
+                print("ERROR: not two faces linked to vert or not list")
+                continue
 
-                for face in linked_faces:
-                    face.select = True
+            # check that all faces are quads or triangles
+            if abs(len(linked_faces[0].verts)-3.5) > 0.5 or abs(len(linked_faces[1].verts)-3.5) > 0.5:
+                print("ERROR: not quad or triangle")
+                continue
 
-                # dissolve vert
-                bmesh.ops.dissolve_verts(bm, verts=[vert])
+            # dissolve vert
+            bmesh.ops.dissolve_verts(bm, verts=[vert])
+            update_elements(vert)
+            update_elements(linked_faces)
 
-                print("linked faces", linked_faces)
+            if not linked_faces[0].is_valid or not linked_faces[1].is_valid:
+                print("ERROR: face not valid")
+                continue
 
+            # get edge to dissolve - intersection of face.edges
+            edges_dissolve = [edge for edge in linked_faces[0].edges if edge in linked_faces[1].edges]
 
-                # get edge to dissolve - intersection of face.edges
-                edges_dissolve = [edge for edge in linked_faces[0].edges if edge in linked_faces[1].edges]
+            if len(edges_dissolve) != 1:
+                print("ERROR: edge not found")
+                continue
 
-                if len(edges_dissolve) != 1:
-                    print("ERROR: edge not found")
-                    continue
+            # dissolve edge
+            bmesh.ops.dissolve_edges(bm, edges=edges_dissolve)
+            update_elements(edges_dissolve)
 
-
-                # dissolve edge
-                bmesh.ops.dissolve_edges(bm, edges=edges_dissolve)
-                print("dissolved edge")
 
         elif len(vert.link_edges) == 3:
-            # look at neighboring faces, if spliting edge can be changed, to have 4 edges on each
-            pass
+            # get all three neighbor faces
+            linked_faces = [face for face in vert.link_faces]
+
+            # check that linked faces is list and has three elements
+            if len(linked_faces) != 3:
+                continue
+
+            # check that all faces are quads
+            if len(linked_faces[0].verts) != 4 or len(linked_faces[1].verts) != 4 or len(linked_faces[2].verts) != 4:
+                continue
+
+            # get set of verts around the faces
+            verts1 = set(linked_faces[0].verts)
+            verts2 = set(linked_faces[1].verts)
+            verts3 = set(linked_faces[2].verts)
+
+            inside_verts = verts1.intersection(verts2).intersection(verts3)
+            around_verts = verts1.union(verts2).union(verts3).difference(inside_verts)
+            around_verts = list(around_verts)
+
+            if len(around_verts) != 6:
+                print("ERROR: not 6 verts around faces")
+                continue
+
+            # dissolve vert
+            bmesh.ops.dissolve_verts(bm, verts=[vert])
+            update_elements(vert)
+
+            # get face that is linked to all 6 verts
+            linked_faces = set(around_verts[0].link_faces)
+            for i in range(1, 6):
+                linked_faces = linked_faces.intersection(around_verts[i].link_faces)
+            
+            if len(linked_faces) != 1:
+                print("ERROR: not one face linked to all verts")
+                continue
+
+            around_verts = linked_faces.pop().verts
+            
+            # opposite vertices will be connected
+            connections = [(around_verts[0], around_verts[3]), (around_verts[1], around_verts[4]), (around_verts[2], around_verts[5])]
+
+            best_connection = None
+            max_weight = 0
+
+            for connection in connections:
+                weight = get_edge_split_weight(bm, connection[0], connection[1], avg_direction)
+                print("weight", weight)
+                if weight > max_weight:
+                    max_weight = weight
+                    best_connection = connection
+
+            if best_connection is None:
+                print("ERROR: best connection not found")
+                continue
+
+            # split edge
+            bmesh.ops.connect_vert_pair(bm, verts=best_connection)
+            update_elements(best_connection)
+            update_elements(bm.edges)
+            update_elements(bm.verts)
+            update_elements(bm.faces)
+
+
+
+def smooth_edge_flow(bm, all_verts):
+    pass            
+
+        
 
 
                 

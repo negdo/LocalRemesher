@@ -14,6 +14,7 @@ def get_selected(bm):
 
     return faces_selected, verts_selected
 
+
 def get_starting(faces_selected, verts_selected):
     edges_of_faces = list(set(edge for face in faces_selected for edge in face.edges))
     # vertices that are connected to at least one face that is not selected
@@ -57,6 +58,7 @@ def get_starting(faces_selected, verts_selected):
 
     return starting_edges, illegal_edges, avg_length
 
+
 def sort_vertices(vertices):
     # sort vertices by location, first by x, then by y, then by z
     vertices.sort(key=lambda vert: vert.co.z)
@@ -66,15 +68,13 @@ def sort_vertices(vertices):
     return vertices
 
 
-
-
-
-
 def get_triangles(edges):
     # go over all new edges
     # check all linked edges of each vertex of the edge
     # if sets of vertices of these edges have same vertex, then this is a triangle
     triangles = set()
+    existing_triangles = set()
+    edges.sort(key=lambda edge: edge.index)
 
     for edge in edges:
         
@@ -87,27 +87,22 @@ def get_triangles(edges):
                     faces_0 = set(face for face in edge.link_faces)
                     faces_1 = set(face for face in edge_1.link_faces)
                     faces_2 = set(face for face in edge_2.link_faces)
+                    common_faces = faces_0.intersection(faces_1, faces_2)
 
                     triangle = tuple(sort_vertices([edge.verts[0], edge.verts[1], edge_2.other_vert(edge.verts[1])]))
 
                     # get intersection of faces, if there is none, we found empty triangle
-                    if len(faces_0.intersection(faces_1, faces_2)) == 0:
-                        # check if triangle is not already in list
-                        
-                        if triangle not in triangles:
-
-                            triangles.add(triangle)
-                            #edge.seam = True
-                            #edge_1.seam = True
-                            #edge_2.seam = True
-                        else:
-                            triangle = list(triangle)
-
+                    if len(common_faces) == 0:
+                        triangles.add(triangle)
+                    elif len(common_faces) == 1:
+                        existing_triangles.add(common_faces.pop())
                     else:
-                        triangle = list(triangle)
+                        print("Error: more than one face with same vertices")
 
 
-    return list(triangles)
+
+
+    return list(triangles), list(existing_triangles)
 
 
 def get_vertex_path(edge_path):
@@ -139,13 +134,11 @@ def get_faces(edges):
         queue.append((edge.verts[1], path, depth))
 
 
-    
-
     # BFS to find shortest cycle
     while len(queue) > 0:
         last_vertex, path, depth = queue.pop(0)
         
-        if depth > 10:
+        if depth > 16:
             break
 
         elif last_vertex == path[0].verts[0]:
