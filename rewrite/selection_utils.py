@@ -110,8 +110,24 @@ def get_vertex_path(edge_path):
     vertex_path = [edge_path[0].verts[0]]
     for edge in edge_path:
         vertex_path.append(edge.other_vert(vertex_path[-1]))
+        
+        # check if index is -1
+        if vertex_path[-1].index == -1:
+            print("Error: vertex index is -1")
 
-    return vertex_path[:-1]
+    vertex_path = list(set(vertex_path))
+
+    # sort path by index, but vertices have to be connected
+    vertex_path.sort(key=lambda vert: vert.index)
+    sorted_path = [vertex_path.pop(0)]
+    for i in range(len(vertex_path)):
+        linked_verts = [edge.other_vert(sorted_path[-1]) for edge in sorted_path[-1].link_edges]
+        for j in range(len(vertex_path)):
+            if vertex_path[j] in linked_verts:
+                sorted_path.append(vertex_path.pop(j))
+                break
+        
+    return sorted_path
 
 
 def get_faces(edges):
@@ -152,10 +168,14 @@ def get_faces(edges):
                     break
 
             if not used:
-                # add face
-                faces.append(get_vertex_path(path))
-                for edge in path:
-                    edges_used[edge] += 1
+                # check if face is not already in faces
+                face = get_vertex_path(path)
+
+                if face not in faces:
+                    # add face
+                    faces.append(get_vertex_path(path))
+                    for edge in path:
+                        edges_used[edge] += 1
 
         else:
             # get all edges that are connected to vert
