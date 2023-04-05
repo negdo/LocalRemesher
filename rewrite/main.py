@@ -38,13 +38,12 @@ bm_proj2.from_mesh(me)
 
 
 ############## SELECTION ############################
-print("### SELECTION ###")
 
 # get selected faces and their vertices for convex mesh
 faces_selected, verts_selected = get_selected(bm_for_convex)
 
 # make the selection convex
-# select_faces_inside_convex_hull(bm_for_convex, verts_selected, bm)
+#select_faces_inside_convex_hull(bm_for_convex, verts_selected, bm)
 
 # get selected faces and their vertices
 faces_selected, verts_selected = get_selected(bm)
@@ -55,7 +54,6 @@ starting_edges, illegal_edges, avg_length = get_starting(faces_selected, verts_s
 
 
 ############## LOOPS SEARCH ############################
-print("### LOOPS SEARCH ###")
 
 # pairs of vertices that will be connected to new edges
 connecting_vertices = []
@@ -82,7 +80,6 @@ for edge in starting_edges:
 
 
 ############## DEFINE EDGE FLOW DIRECTION ##############
-print("### DEFINE EDGE FLOW DIRECTION ###")
 
 if len(connecting_vertices) > 0:
     # use average direction of already defined loops
@@ -97,7 +94,6 @@ bmesh.ops.delete(bm, geom=faces_selected, context="FACES")
 
 
 ############## CONNECTING OTHER VERTICES ###############
-print("### CONNECTING OTHER VERTICES ###")
 
 # edges that are facing the avg_direction (or perpendicular) have higher priority
 # calculate weight for each combination of edges
@@ -138,7 +134,6 @@ while len(pq) > 0:
 
 
 ############## ITERSECTING POINTS #####################
-print("### INTERSECTING POINTS ###")
 
 # innit new bmesh for projection
 me = bpy.context.object.data
@@ -164,9 +159,6 @@ for i in range(len(connecting_vertices)-1):
 
 ############## BUILDING MESH #########################
 
-
-print("### BUILDING MESH ###")
-
 avg_new_edge_length = 0
 vertices = set()
 edges = []
@@ -178,21 +170,39 @@ for i in range(len(connecting_vertices)):
     path = shortest_path(connecting_vertices[i])
 
     for j in range(len(path)-1):
-        edge = bm.edges.new((path[j], path[j+1]))
-        avg_new_edge_length += (path[j].co - path[j+1].co).length
-        vertices.add(path[j])
-        edges.append(edge)
+        # check if edge would be too long, in that case split it
+        if (path[j].co - path[j+1].co).length > avg_length*2:
+            # split edge
+            new_vert = bm.verts.new((path[j].co + path[j+1].co)/2)
+            edge1 = bm.edges.new((path[j], new_vert))
+            edge2 = bm.edges.new((new_vert, path[j+1]))
+            avg_new_edge_length += (new_vert.co - path[j+1].co).length + (path[j].co - new_vert.co).length
+            vertices.add(path[j])
+            vertices.add(new_vert)
+            vertices.add(path[j+1])
+            edges.append(edge1)
+            edges.append(edge2)
+        else:
+            try:
+                edge = bm.edges.new((path[j], path[j+1]))
+                avg_new_edge_length += (path[j].co - path[j+1].co).length
+                vertices.add(path[j])
+                edges.append(edge)
+            except:
+                print("ERROR: Edge already exists")
+
     vertices.add(path[-1])
+    vertices.add(path[0])
     outside_vertices.add(path[-1])
     outside_vertices.add(path[0])
-    
+
 
 vertices = list(vertices)
 avg_new_edge_length /= len(connecting_vertices)
 
 
 # merge vertices by distance
-bmesh.ops.remove_doubles(bm, verts=vertices, dist=avg_new_edge_length/8)
+bmesh.ops.remove_doubles(bm, verts=vertices, dist=avg_length/4)
 
 bm.edges.ensure_lookup_table()
 bm.verts.ensure_lookup_table()
@@ -203,11 +213,9 @@ vertices = [v for v in vertices if v.is_valid and v not in outside_vertices]
 edges = list(set(edge for vert in vertices for edge in vert.link_edges))
 
 
-
-
 ############## IPROVE MESH ###########################
-print("### IMPROVE MESH ###")
 
+print("### FIND AND DISSOLVE TRIANGLES ###")
 # find all triangles, empty and already filled triangles
 triangles, triangles_faces = get_triangles(edges)
 
@@ -238,33 +246,52 @@ while len(pq) > 0:
 
 bm.edges.ensure_lookup_table()
 bm.verts.ensure_lookup_table()
+bm.faces.ensure_lookup_table()
 
 # update edges
 edges = [e for e in edges if e.is_valid]
 
-faces = get_faces(edges)
-created_faces = []
+print("### FILL FACE HOLES ###")
+bm.verts.index_update()
 
-# fill faces
-for face in faces:
-    if len(face) < 3:
-        print("ERROR: face with less than 3 vertices")
-    else:
-        try:
-            new_face = bm.faces.new(face)
-            created_faces.append(new_face)
-        except Exception as e:
-            print("ERROR: could not create face")
-            print(e)
+# Create new faces n-gons
+created_faces = get_faces(edges, bm)
 
 bm.faces.ensure_lookup_table()
 bm.faces.index_update()
 
+# add created faces edges to edges list
+for face in created_faces:
+    for edge in face.edges:
+        edges.append(edge)
+        edge.select = True
+
+edges = list(set(edges))
+
+
+# delete edges that are not part of 2 faces
+for edge in edges:
+    print(len(edge.link_faces))
+    if len(edge.link_faces) < 2:
+        print("Deleting edge", edge.index)
+        bmesh.ops.delete(bm, geom=[edge], context="EDGES")
+
+bm.edges.ensure_lookup_table()
+bm.verts.ensure_lookup_table()
+bm.faces.ensure_lookup_table()
+
+print("### CONVERT N-GONS TO QUADS ###")
+
+
 # convert n-gons to quads
 created_faces = subdivide_faces_to_quads(bm, created_faces, avg_direction)
 
+for face in created_faces:
+    face.select = True
 
 
+
+"""
 # get vertices
 vertices = list(set(vert for face in created_faces for vert in face.verts if vert.is_valid))
 
@@ -273,11 +300,12 @@ vertices = list(set(vert for face in created_faces for vert in face.verts if ver
 improve_edge_flow_direction(bm, vertices, avg_direction)
 
 
+
 # relax vertices to get more even mesh
 vertices = [v for v in vertices if v.is_valid]
 relax_vertices(vertices, 10, 10)
 
-"""
+
 # straiten loops
 # TODO
 
@@ -290,7 +318,6 @@ for vert in vertices:
 bmesh.ops.recalc_face_normals(bm, faces=[face for face in created_faces if face.is_valid])
 
 """
-
 ############## END #####################################
 
 

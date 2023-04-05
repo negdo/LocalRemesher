@@ -104,6 +104,10 @@ def split_face(bm, face, avg_direction):
         bmesh.ops.subdivide_edges(bm, edges=[edge], cuts=1, use_grid_fill=True)
         update_elements(edges)
 
+    if len(edge.link_faces) != 2:
+        print("ERROR: edge does not have 2 faces")
+        return None, None
+
     # return new faces
     return edge.link_faces[0], edge.link_faces[1]
 
@@ -175,6 +179,7 @@ def subdivide_faces_to_quads(bm, faces, avg_direction):
             print("ERROR: invalid face")
             continue
         elif len(face.verts) == 4:
+            # quads are great, no need to change them
             continue
         elif len(face.verts) == 5:
             # split one of the edges
@@ -204,7 +209,6 @@ def subdivide_faces_to_quads(bm, faces, avg_direction):
     
     return [face for face in created_faces if face.is_valid]
        
-
 
 def relax_vertices(all_verts, iterations=1, translation_factor=0.1):
     # get all iner verts that will be moved
@@ -271,6 +275,7 @@ def relax_vertices(all_verts, iterations=1, translation_factor=0.1):
             # if number of convex faces is lower, revert translation
             if convex_faces_after < convex_faces:
                 vert.co -= translation_vector
+
 
 def update_elements(elements):
     try:
@@ -389,7 +394,6 @@ def improve_edge_flow_direction(bm, all_verts, avg_direction):
 
             for connection in connections:
                 weight = get_edge_split_weight(bm, connection[0], connection[1], avg_direction)
-                print("weight", weight)
                 if weight > max_weight:
                     max_weight = weight
                     best_connection = connection
