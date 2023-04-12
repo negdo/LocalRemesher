@@ -271,9 +271,7 @@ edges = list(set(edges))
 
 # delete edges that are not part of 2 faces
 for edge in edges:
-    print(len(edge.link_faces))
     if len(edge.link_faces) < 2:
-        print("Deleting edge", edge.index)
         bmesh.ops.delete(bm, geom=[edge], context="EDGES")
 
 bm.edges.ensure_lookup_table()
@@ -288,7 +286,6 @@ created_faces = subdivide_faces_to_quads(bm, created_faces, avg_direction)
 
 for face in created_faces:
     face.select = True
-
 
 
 """

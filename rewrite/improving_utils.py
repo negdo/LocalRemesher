@@ -54,8 +54,6 @@ def get_edge_split_weight(face, start, end, avg_direction, direct_coords=False):
         convex_weight *= 10
 
     return avg_angle_diff * convex_weight / dist
-    #return avg_angle_diff / dist
-
 
 
 def split_face(bm, face, avg_direction):
@@ -92,38 +90,33 @@ def split_face(bm, face, avg_direction):
 
     # create new edge and split face
     edges = bmesh.ops.connect_vert_pair(bm, verts=splitting_edge)
-    
 
-    if len(edges["edges"]) == 0:
-        return None, None
     edge = edges["edges"][0]
     update_elements(edge)
 
-    # if number of original faces was 7 or more, add another vertex in the middle
-    if full >= 7:
-        bmesh.ops.subdivide_edges(bm, edges=[edge], cuts=1, use_grid_fill=True)
+    if full < 7:
+        # return new faces
+        return edge.link_faces[0], edge.link_faces[1]
+    else:
+        # if number of original faces was 7 or more, add another vertex in the middle
+        edges = bmesh.ops.subdivide_edges(bm, edges=[edge], cuts=1, use_grid_fill=True)
         update_elements(edges)
 
-    if len(edge.link_faces) != 2:
-        print("ERROR: edge does not have 2 faces")
-        return None, None
-
-    # return new faces
-    return edge.link_faces[0], edge.link_faces[1]
-
+        # return faces neighboring new vert
+        new_vert = edges["geom_split"][0]
+        return new_vert.link_faces
 
 
 def convert_5gon_to_6gon(bm, face, avg_direction):
-    # split 5gon in half
-    # split on edge in the middle and connect with opposite vertex
+    # choose an edge and split it
     max_weight = 0
     subdivide_edge = None
+    
 
     for edge in face.edges:
+        update_elements(edge)
         # find the middle point in current edge
         middle_point = (edge.verts[0].co + edge.verts[1].co) / 2
-
-        update_elements(edge)
 
         # find the opposite vertex
         linked_edges_verts = set()
@@ -140,7 +133,6 @@ def convert_5gon_to_6gon(bm, face, avg_direction):
         else:
             opposite_vert = opposite_vert[0]
 
-
         # get weight of this edge
         weight = get_edge_split_weight(face, middle_point, opposite_vert.co, avg_direction, direct_coords=True)
 
@@ -148,28 +140,22 @@ def convert_5gon_to_6gon(bm, face, avg_direction):
             max_weight = weight
             subdivide_edge = edge
 
-    
     # subdivide edge
     edges = bmesh.ops.subdivide_edges(bm, edges=[subdivide_edge], cuts=1, use_grid_fill=True)
     update_elements(edges)
-    new_vert = edges["geom_split"][0]
-    changed_faces = new_vert.link_faces
 
     # return faces neighboring new vert
-    return [face for face in changed_faces if face.is_valid] + [face]
-
+    new_vert = edges["geom_split"][0]
+    return new_vert.link_faces
 
 
 def subdivide_faces_to_quads(bm, faces, avg_direction):
-
     created_faces = set(faces)
-
     queue = []
 
     # add weighted faces to queue
     for face in faces:
         queue.append(Weighted_face(face))
-
     heapq.heapify(queue)
 
     while len(queue) > 0:
@@ -178,8 +164,12 @@ def subdivide_faces_to_quads(bm, faces, avg_direction):
         if not face.is_valid:
             print("ERROR: invalid face")
             continue
+        elif len(face.verts) == 3:
+            print("kinda error: face has 3 vertices")
+            created_faces.add(face)
         elif len(face.verts) == 4:
             # quads are great, no need to change them
+            created_faces.add(face)
             continue
         elif len(face.verts) == 5:
             # split one of the edges
@@ -206,7 +196,6 @@ def subdivide_faces_to_quads(bm, faces, avg_direction):
         else:
             print("ERROR: face with less than 4 vertices")
 
-    
     return [face for face in created_faces if face.is_valid]
        
 

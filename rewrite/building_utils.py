@@ -188,13 +188,12 @@ def get_faces(edges, bm):
                     except Exception as e:
                         print("ERROR: could not create face", str([vert.index for vert in face]))
                         print(e)
-                        #print("path", str([edge.index for edge in path]))
-                        #print("")
+                        print("path", str([edge.index for edge in path]))
+                        print("")
 
         else:
             # get all edges that are connected to vert
             # check that edge is not used
-            # edges_of_last_vertex = [edge for edge in last_vertex.link_edges if edge not in path and ((edge in edges_used and edges_used[edge] < 2) or (len(edge.link_faces) < 2))]
             edges_of_last_vertex = []
             for edge in last_vertex.link_edges:
                 if edge.is_valid and edge not in path:
