@@ -277,6 +277,7 @@ for edge in edges:
 bm.edges.ensure_lookup_table()
 bm.verts.ensure_lookup_table()
 bm.faces.ensure_lookup_table()
+created_faces = [f for f in created_faces if f.is_valid]
 
 print("### CONVERT N-GONS TO QUADS ###")
 
@@ -288,7 +289,7 @@ for face in created_faces:
     face.select = True
 
 
-"""
+
 # get vertices
 vertices = list(set(vert for face in created_faces for vert in face.verts if vert.is_valid))
 
@@ -314,7 +315,6 @@ for vert in vertices:
 # recalculate normals
 bmesh.ops.recalc_face_normals(bm, faces=[face for face in created_faces if face.is_valid])
 
-"""
 ############## END #####################################
 
 

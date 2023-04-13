@@ -5,7 +5,7 @@ import heapq
 
 from other_utils import *
 from Directed_edge import *
-
+from building_utils import sort_vertices
 
 def get_edge_split_weight(face, start, end, avg_direction, direct_coords=False):
     # start and end are vertices
@@ -87,19 +87,34 @@ def split_face(bm, face, avg_direction):
                 max_weight = weight
                 splitting_edge = (face.verts[i], face.verts[(i+half+1) % full])
 
+    bm.verts.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+    bm.edges.ensure_lookup_table()
+
 
     # create new edge and split face
     edges = bmesh.ops.connect_vert_pair(bm, verts=splitting_edge)
 
-    edge = edges["edges"][0]
+    try:
+        edge = edges["edges"][0]
+    except:
+        print("ERROR: edge not created - split_face")
+        edges = bmesh.ops.connect_vert_pair(bm, verts=splitting_edge)
+
+        if len(edges["edges"]) == 0:
+            print("ERROR: edge not created again - split_face")
+            return []
+
+        edge = edges["edges"][0]
+    
     update_elements(edge)
 
     if full < 7:
         # return new faces
-        return edge.link_faces[0], edge.link_faces[1]
+        return edge.link_faces
     else:
         # if number of original faces was 7 or more, add another vertex in the middle
-        edges = bmesh.ops.subdivide_edges(bm, edges=[edge], cuts=1, use_grid_fill=True)
+        edges = bmesh.ops.subdivide_edges(bm, edges=[edge], cuts=1, use_single_edge=True)
         update_elements(edges)
 
         # return faces neighboring new vert
@@ -111,7 +126,6 @@ def convert_5gon_to_6gon(bm, face, avg_direction):
     # choose an edge and split it
     max_weight = 0
     subdivide_edge = None
-    
 
     for edge in face.edges:
         update_elements(edge)
@@ -119,19 +133,18 @@ def convert_5gon_to_6gon(bm, face, avg_direction):
         middle_point = (edge.verts[0].co + edge.verts[1].co) / 2
 
         # find the opposite vertex
-        linked_edges_verts = set()
+        opposite_vert = set(face.verts)
+
+        # remove all verts that are not opposite
         for vert in edge.verts:
             for linked_edge in vert.link_edges:
                 for vert in linked_edge.verts:
-                    linked_edges_verts.add(vert)
+                    opposite_vert.discard(vert)
         
-        # find the opposite vertex
-        opposite_vert = [vert for vert in face.verts if vert not in linked_edges_verts]
         if len(opposite_vert) != 1:
             print("ERROR: opposite vert not found")
             continue
-        else:
-            opposite_vert = opposite_vert[0]
+        opposite_vert = opposite_vert.pop()
 
         # get weight of this edge
         weight = get_edge_split_weight(face, middle_point, opposite_vert.co, avg_direction, direct_coords=True)
@@ -141,16 +154,46 @@ def convert_5gon_to_6gon(bm, face, avg_direction):
             subdivide_edge = edge
 
     # subdivide edge
-    edges = bmesh.ops.subdivide_edges(bm, edges=[subdivide_edge], cuts=1, use_grid_fill=True)
+    
+    edges = bmesh.ops.subdivide_edges(bm, edges=[subdivide_edge], cuts=1, use_single_edge=True)
     update_elements(edges)
 
     # return faces neighboring new vert
     new_vert = edges["geom_split"][0]
+    bm.verts.ensure_lookup_table()
+    bm.faces.ensure_lookup_table()
+
     return new_vert.link_faces
 
 
+def triangle_to_quad(bm, triangle, avgdirection):
+    weighted_triangle = Weighted_triangle(triangle, avgdirection)
+
+    if weighted_triangle.max_weight > 0.1:
+        linked_faces = [face for face in weighted_triangle.max_edge.link_faces]
+        linked_verts = set(vert for face in linked_faces for vert in face.verts)
+
+        bmesh.ops.dissolve_edges(bm, edges=[weighted_triangle.max_edge])
+        bm.verts.ensure_lookup_table()
+        bm.faces.ensure_lookup_table()
+        bm.edges.ensure_lookup_table()
+
+        first_vert = linked_verts.pop()
+        for linked_face in first_vert.link_faces:
+            count = 0
+            for vert in linked_verts:
+                if vert in linked_face.verts:
+                    count += 1
+            if count > 2:
+                return linked_face
+
+    return None
+
+
+        
+
 def subdivide_faces_to_quads(bm, faces, avg_direction):
-    created_faces = set(faces)
+    created_faces = []
     queue = []
 
     # add weighted faces to queue
@@ -162,41 +205,45 @@ def subdivide_faces_to_quads(bm, faces, avg_direction):
         weighted_face = heapq.heappop(queue)
         face = weighted_face.face
         if not face.is_valid:
-            print("ERROR: invalid face")
             continue
         elif len(face.verts) == 3:
-            print("kinda error: face has 3 vertices")
-            created_faces.add(face)
+            # check if any neighboring faces is triangle and join them
+            faces_to_updatece = triangle_to_quad(bm, face, avg_direction)
+            if faces_to_updatece is None:
+                continue
+            heapq.heappush(queue, Weighted_face(faces_to_updatece))
+            created_faces.append(faces_to_updatece)
         elif len(face.verts) == 4:
             # quads are great, no need to change them
-            created_faces.add(face)
+            created_faces.append(face)
             continue
         elif len(face.verts) == 5:
             # split one of the edges
-            # connect new edge with opposite one
             faces_to_update = convert_5gon_to_6gon(bm, face, avg_direction)
             bm.faces.ensure_lookup_table()
+            bm.edges.ensure_lookup_table()
+            bm.verts.ensure_lookup_table()
             # add new split faces to queue
             for face in faces_to_update:
-                if face is None:
-                    print("ERROR: face is None")
-                    continue
                 heapq.heappush(queue, Weighted_face(face))
-                created_faces.add(face)
+                created_faces.append(face)
         elif len(face.verts) > 5:
+            n_vrts = len(face.verts)
             # split face in half
             faces_to_update = split_face(bm, face, avg_direction)
             bm.faces.ensure_lookup_table()
+            bm.edges.ensure_lookup_table()
+            bm.verts.ensure_lookup_table()
             for face in faces_to_update:
-                if face is None:
-                    print("ERROR: face is None, >5")
-                    continue
                 heapq.heappush(queue, Weighted_face(face))
-                created_faces.add(face)
+                created_faces.append(face)
         else:
-            print("ERROR: face with less than 4 vertices")
+            print("ERROR: should not be here")
 
-    return [face for face in created_faces if face.is_valid]
+    created_faces = list(set(created_faces))
+    created_faces = [face for face in created_faces if face.is_valid]
+
+    return created_faces
        
 
 def relax_vertices(all_verts, iterations=1, translation_factor=0.1):

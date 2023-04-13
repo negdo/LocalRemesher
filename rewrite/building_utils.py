@@ -115,6 +115,19 @@ def project_point_to_faces(bvh_tree, point, bm):
     return closest_point
 
 
+def sort_vertices(vertex_path):
+    # sort path by index, but vertices have to be connected
+    vertex_path.sort(key=lambda vert: vert.index)
+    sorted_path = [vertex_path.pop(0)]
+    for i in range(len(vertex_path)):
+        linked_verts = [edge.other_vert(sorted_path[-1]) for edge in sorted_path[-1].link_edges]
+        for j in range(len(vertex_path)):
+            if vertex_path[j] in linked_verts:
+                sorted_path.append(vertex_path.pop(j))
+                break
+            
+    return sorted_path
+
 def get_vertex_path(edge_path):
     # get vertex path from edge path
     vertex_path = [edge_path[0].verts[0]]
