@@ -75,12 +75,14 @@ num_particles = len(bm_triangulated.faces) * 10
 particles_per_face = np.random.multinomial(num_particles, weights/np.sum(weights))
 particles = []
 
+bm_triangulated.faces.ensure_lookup_table()
+
 for i in range(len(particles_per_face)):
     for j in range(particles_per_face[i]):
         # sample random point on triangle
         # vectors of triangle edges
-        vec1 = bm_triangulated.faces[i].verts[0].co - bm_triangulated.faces[i].verts[1].co
-        vec2 = bm_triangulated.faces[i].verts[0].co - bm_triangulated.faces[i].verts[2].co
+        vec1 = bm_triangulated.faces[i].verts[1].co - bm_triangulated.faces[i].verts[0].co
+        vec2 = bm_triangulated.faces[i].verts[2].co - bm_triangulated.faces[i].verts[0].co
 
         # random variables
         t1 = np.random.uniform(0, 1)
@@ -95,7 +97,12 @@ for i in range(len(particles_per_face)):
         particles.append(bm_triangulated.faces[i].verts[0].co + t1*vec1 + t2*vec2)
 
 
-
+print("Particles sampled")
+print("Number of particles: " + str(len(particles)))
+print(particles[0])
+print(particles[1])
+print(particles[2])
+print("...")
 
 ############## DEFINE EDGE FLOW DIRECTION ##############
 
@@ -103,35 +110,56 @@ for i in range(len(particles_per_face)):
 # use average direction of starting edges
 avg_direction = define_average_direction(starting_edges)
 
-
 # delete old faces
 bmesh.ops.delete(bm, geom=faces_selected, context="FACES")
+bm.verts.ensure_lookup_table()
+bm.edges.ensure_lookup_table()
+bm.faces.ensure_lookup_table()
+
+avaliable_verts = [vert for vert in bm.verts if vert.select == True]
+side_edges = [edge for edge in bm.edges if edge.select == True]
+
+avg_length = sum([edge.calc_length() for edge in side_edges]) / len(side_edges)
+print("Average length: " + str(avg_length))
+
+radius = avg_length / 3
+for side_edge in side_edges:
+    vert1 = side_edge.verts[0].co
+    vert2 = side_edge.verts[1].co
+    for particle in particles.copy():
+        point, t = mathutils.geometry.intersect_point_line(particle, vert1, vert2)
+        distance = (point - particle).length
+        
+        # distance to edge
+        if t >= -0.2 and t <= 1.2:
+            if distance < radius:
+                particles.remove(particle)
 
 
 ############## BUILD TRIANGLES #########################
 
+
+
+
 # fill the queue with starting edges
 queue = []
-for i in range(len(starting_edges)):
-    queue.append(starting_edges[i])
+for i in range(len(side_edges)):
+    queue.append(side_edges[i])
 
-avaliable_verts = []
-for edge in starting_edges:
-    avaliable_verts.append(edge.verts[0])
-    avaliable_verts.append(edge.verts[1])
-avaliable_verts = list(set(avaliable_verts))
-
+max_faces = 35
 # build triangles
-while len(queue) > 0:
+while len(queue) > 0 and max_faces > 0:
+    max_faces -= 1
+
     edge = queue.pop(0)
+    print("Edge: " + str(edge.verts[0].co) + " " + str(edge.verts[1].co))
 
     if len(edge.link_faces) >= 2:
         continue
 
     # find the best particle
     best_particle = None
-    best_particle_index = -1
-    best_weight = 1000000000
+    best_weight_particles = 1000000000
 
     for i in range(len(particles)):
         # calculate weight
@@ -139,53 +167,119 @@ while len(queue) > 0:
         dist2 = abs((edge.verts[1].co - particles[i]).length - avg_length)
         weight = dist1 + dist2
 
-        if weight < best_weight:
-            best_weight = weight
+        if weight < best_weight_particles:
+            best_weight_particles = weight
             best_particle = particles[i]
-            best_particle_index = i
 
     # find best vertex
     best_vertex = None
-    best_vertex_index = -1
     best_weight = 1000000000
-
+    
     for i in range(len(avaliable_verts)):
 
-        used = False
-        # check if vertex is already used
-        for edge in avaliable_verts[i].link_edges:
-            if len(edge.link_faces) < 2:
-                used = True
-                break
-        if used:
+        
+        current_vert = avaliable_verts[i]
+        if current_vert == edge.verts[0] or current_vert == edge.verts[1]:
             continue
+
+        vertex_usable = False
+        for used_edge in current_vert.link_edges:
+            pass
+            if len(used_edge.link_faces) < 2:
+                vertex_usable = True
+                break
+        if vertex_usable == False:
+            continue
+
+        link_verts1 = [edge1.other_vert(edge.verts[0]) for edge1 in edge.verts[0].link_edges]
+        link_verts2 = [edge2.other_vert(edge.verts[1]) for edge2 in edge.verts[1].link_edges]
+
+        if current_vert in link_verts1 and current_vert in link_verts2:
+            # if they share a face, they are not usable otherwise this is the best vertex
+            if len([face for face in current_vert.link_faces if face in edge.verts[0].link_faces and face in edge.verts[1].link_faces]) == 0:
+                best_weight = 0
+                best_vertex = current_vert
+                break
+            else:
+                continue
+
+        if current_vert in link_verts1:
+            connecting_edge = [edge1 for edge1 in edge.verts[0].link_edges if edge1.other_vert(edge.verts[0]) == current_vert][0]
+            if len(connecting_edge.link_faces) >= 2:
+                continue
+        
+        if current_vert in link_verts2:
+            connecting_edge = [edge2 for edge2 in edge.verts[1].link_edges if edge2.other_vert(edge.verts[1]) == current_vert][0]
+            if len(connecting_edge.link_faces) >= 2:
+                continue
 
 
         # calculate weight
-        dist1 = abs((edge.verts[0].co - avaliable_verts[i].co).length - avg_length)
-        dist2 = abs((edge.verts[1].co - avaliable_verts[i].co).length - avg_length)
+        dist1 = abs((edge.verts[0].co - current_vert.co).length - avg_length)
+        dist2 = abs((edge.verts[1].co - current_vert.co).length - avg_length)
         weight = dist1 + dist2
 
         if weight < best_weight:
             best_weight = weight
-            best_vertex = avaliable_verts[i]
-            best_vertex_index = i
+            best_vertex = current_vert
+
+            print("Best vertex: " + str(best_vertex))
+            print("Best weight: " + str(best_weight))
 
 
     new_vert = None
     # check if best vertex is good enough
-    if best_weight < avg_length/2:    
+    if (best_weight < avg_length or best_weight_particles >= best_weight) and best_vertex != None:    
         new_vert = best_vertex
     else:
+        if best_particle == None:
+            continue
         new_vert = bm.verts.new(best_particle)
         avaliable_verts.append(new_vert)
 
     # create new face
     new_face = bm.faces.new((edge.verts[0], edge.verts[1], new_vert))
+    new_face.select = True
 
     bm.faces.ensure_lookup_table()
     bm.edges.ensure_lookup_table()
     bm.verts.ensure_lookup_table()
+
+    for edge in new_face.edges:
+        if len(edge.link_faces) < 2:
+            queue.append(edge)
+
+    
+    # remove particles around new face
+    radius = avg_length/2
+
+    for side_edge in new_face.edges:
+        vert1 = side_edge.verts[0].co
+        vert2 = side_edge.verts[1].co
+        for particle in particles.copy():
+            point, t = mathutils.geometry.intersect_point_line(particle, vert1, vert2)
+            distance = (point - particle).length
+            
+            # distance to edge
+            if t >= -0.2 and t <= 1.2:
+                if distance < radius:
+                    particles.remove(particle)
+    
+
+
+for particle in particles:
+    bm.verts.new(particle)
+
+
+edges = set(edge for face in bm.faces for edge in face.edges if face.select)
+for side_edge in side_edges:
+    if side_edge in edges:
+        edges.remove(side_edge)
+edges = list(edges)
+
+
+
+############## IPROVE MESH ###########################
 
 
 
