@@ -115,6 +115,12 @@ queue = []
 for i in range(len(starting_edges)):
     queue.append(starting_edges[i])
 
+avaliable_verts = []
+for edge in starting_edges:
+    avaliable_verts.append(edge.verts[0])
+    avaliable_verts.append(edge.verts[1])
+avaliable_verts = list(set(avaliable_verts))
+
 # build triangles
 while len(queue) > 0:
     edge = queue.pop(0)
@@ -143,15 +149,26 @@ while len(queue) > 0:
     best_vertex_index = -1
     best_weight = 1000000000
 
-    for i in range(len(bm.verts)):
+    for i in range(len(avaliable_verts)):
+
+        used = False
+        # check if vertex is already used
+        for edge in avaliable_verts[i].link_edges:
+            if len(edge.link_faces) < 2:
+                used = True
+                break
+        if used:
+            continue
+
+
         # calculate weight
-        dist1 = abs((edge.verts[0].co - bm.verts[i].co).length - avg_length)
-        dist2 = abs((edge.verts[1].co - bm.verts[i].co).length - avg_length)
+        dist1 = abs((edge.verts[0].co - avaliable_verts[i].co).length - avg_length)
+        dist2 = abs((edge.verts[1].co - avaliable_verts[i].co).length - avg_length)
         weight = dist1 + dist2
 
         if weight < best_weight:
             best_weight = weight
-            best_vertex = bm.verts[i]
+            best_vertex = avaliable_verts[i]
             best_vertex_index = i
 
 
@@ -161,6 +178,7 @@ while len(queue) > 0:
         new_vert = best_vertex
     else:
         new_vert = bm.verts.new(best_particle)
+        avaliable_verts.append(new_vert)
 
     # create new face
     new_face = bm.faces.new((edge.verts[0], edge.verts[1], new_vert))
