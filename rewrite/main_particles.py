@@ -22,6 +22,45 @@ from loop_utils import *
 from building_utils import *
 from improving_utils import *
 
+def is_on_inside(point, edge):
+    # returns False, if point is on the inside of face that is connected to edge
+    if len(edge.link_faces) != 1:
+        return False
+    
+    edge.link_faces[0].normal_update()
+    plane1_normal = edge.link_faces[0].normal.normalized()
+    plane2_normal = (edge.verts[1].co - edge.verts[0].co).normalized()
+    center = (edge.verts[1].co + edge.verts[0].co) / 2
+
+    line1, line2 = mathutils.geometry.intersect_plane_plane(center, plane1_normal, center, plane2_normal)
+    line2 = line2.normalized() * edge.calc_length() + line1
+
+    if line1 != None:
+        projected, _ = mathutils.geometry.intersect_point_line(point, line1, line2)
+        t = (projected - center).length
+
+        if t <= 0.01:
+            return False
+    
+    return True
+
+def get_particle_weight(particle, edge, avg_length, mode="particle"):
+    dist1 = abs((edge.verts[0].co - particle).length - avg_length)
+    dist2 = abs((edge.verts[1].co - particle).length - avg_length)
+
+    if mode == "vertex":
+        # distance from center of edge - pick the closest one
+        center = (edge.verts[0].co + edge.verts[1].co) / 2
+        dist3 = abs((center - particle).length - avg_length)
+
+        return dist1/avg_length + dist2/avg_length + 10*dist3/avg_length
+
+
+    return dist1/avg_length + dist2/avg_length
+
+
+
+
 ############## INIT #################################
 
 # set mode to object mode
@@ -97,12 +136,6 @@ for i in range(len(particles_per_face)):
         particles.append(bm_triangulated.faces[i].verts[0].co + t1*vec1 + t2*vec2)
 
 
-print("Particles sampled")
-print("Number of particles: " + str(len(particles)))
-print(particles[0])
-print(particles[1])
-print(particles[2])
-print("...")
 
 ############## DEFINE EDGE FLOW DIRECTION ##############
 
@@ -122,6 +155,7 @@ side_edges = [edge for edge in bm.edges if edge.select == True]
 avg_length = sum([edge.calc_length() for edge in side_edges]) / len(side_edges)
 print("Average length: " + str(avg_length))
 
+# remove particles that are too close to edges
 radius = avg_length / 3
 for side_edge in side_edges:
     vert1 = side_edge.verts[0].co
@@ -146,11 +180,9 @@ queue = []
 for i in range(len(side_edges)):
     queue.append(side_edges[i])
 
-max_faces = 35
+max_faces = 500
 # build triangles
 while len(queue) > 0 and max_faces > 0:
-    max_faces -= 1
-
     edge = queue.pop(0)
     print("Edge: " + str(edge.verts[0].co) + " " + str(edge.verts[1].co))
 
@@ -159,14 +191,13 @@ while len(queue) > 0 and max_faces > 0:
 
     # find the best particle
     best_particle = None
-    best_weight_particles = 1000000000
+    best_weight_particles = 10000
 
     for i in range(len(particles)):
-        # calculate weight
-        dist1 = abs((edge.verts[0].co - particles[i]).length - avg_length)
-        dist2 = abs((edge.verts[1].co - particles[i]).length - avg_length)
-        weight = dist1 + dist2
+        if not is_on_inside(particles[i], edge):
+            continue
 
+        weight = get_particle_weight(particles[i], edge, avg_length)
         if weight < best_weight_particles:
             best_weight_particles = weight
             best_particle = particles[i]
@@ -176,7 +207,6 @@ while len(queue) > 0 and max_faces > 0:
     best_weight = 1000000000
     
     for i in range(len(avaliable_verts)):
-
         
         current_vert = avaliable_verts[i]
         if current_vert == edge.verts[0] or current_vert == edge.verts[1]:
@@ -184,7 +214,6 @@ while len(queue) > 0 and max_faces > 0:
 
         vertex_usable = False
         for used_edge in current_vert.link_edges:
-            pass
             if len(used_edge.link_faces) < 2:
                 vertex_usable = True
                 break
@@ -213,23 +242,29 @@ while len(queue) > 0 and max_faces > 0:
             if len(connecting_edge.link_faces) >= 2:
                 continue
 
+        # check if angle between normals is too small
+        if not is_on_inside(current_vert.co, edge):
+            continue 
+
+        link_faces1 = [face for face in current_vert.link_faces if face in edge.verts[0].link_faces]
+        link_faces2 = [face for face in current_vert.link_faces if face in edge.verts[1].link_faces]
+
+        if link_faces1 != []:
+            if current_vert not in link_verts1:
+                continue
+        if link_faces2 != []:
+            if current_vert not in link_verts2:
+                continue
 
         # calculate weight
-        dist1 = abs((edge.verts[0].co - current_vert.co).length - avg_length)
-        dist2 = abs((edge.verts[1].co - current_vert.co).length - avg_length)
-        weight = dist1 + dist2
-
+        weight = get_particle_weight(current_vert.co, edge, avg_length)
         if weight < best_weight:
             best_weight = weight
             best_vertex = current_vert
 
-            print("Best vertex: " + str(best_vertex))
-            print("Best weight: " + str(best_weight))
-
-
     new_vert = None
     # check if best vertex is good enough
-    if (best_weight < avg_length or best_weight_particles >= best_weight) and best_vertex != None:    
+    if (best_weight < 1 or best_weight_particles >= best_weight) and best_vertex != None:    
         new_vert = best_vertex
     else:
         if best_particle == None:
@@ -240,6 +275,7 @@ while len(queue) > 0 and max_faces > 0:
     # create new face
     new_face = bm.faces.new((edge.verts[0], edge.verts[1], new_vert))
     new_face.select = True
+    max_faces -= 1
 
     bm.faces.ensure_lookup_table()
     bm.edges.ensure_lookup_table()
