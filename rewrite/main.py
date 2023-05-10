@@ -1,12 +1,9 @@
-import bpy
-import bmesh
-import numpy as np
-import mathutils
-from scipy.optimize import linear_sum_assignment
-import sys
-import heapq
 import os
 import pathlib
+import sys
+
+import bmesh
+import bpy
 
 # get file location
 syspath = os.path.abspath(__file__)
@@ -16,8 +13,6 @@ syspath = str(syspath) + "\\rewrite"
 sys.path.append(syspath)
 
 from selection_utils import *
-from other_utils import *
-from Directed_edge import *
 from loop_utils import *
 from building_utils import *
 from improving_utils import *

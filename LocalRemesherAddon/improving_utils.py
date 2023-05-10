@@ -437,8 +437,103 @@ def improve_edge_flow_direction(bm, all_verts, avg_direction):
 
 
 def smooth_edge_flow(bm, all_verts):
-    pass            
+    pass
 
+
+def get_angle_between_edges(edge1, edge2, common_vert):
+    vec1 = (common_vert.co - edge1.other_vert(common_vert).co).normalized()
+    vec2 = (common_vert.co - edge2.other_vert(common_vert).co).normalized()
+    return abs(vec1.angle(vec2) % math.pi)
+
+
+def get_edge_disolve_weight(edge, avg_direction):
+    for face in edge.link_faces:
+        if len(face.verts) != 3:
+            return 100000000
+
+    if len(edge.link_faces) != 2:
+        return 100000000
+
+    vec = (edge.verts[1].co - edge.verts[0].co).normalized()
+    angle = vec.angle(avg_direction)
+    # weight is biggest when angle to average direction is 45 degrees
+    angle = abs(abs(abs(angle) - math.pi / 2) - math.pi / 4)
+
+    # get size of angles of new face
+    face1 = edge.link_faces[0]
+    face2 = edge.link_faces[1]
+
+    corner1_edge1 = [edge1 for edge1 in edge.verts[0].link_edges if edge1 != edge and edge1 in face1.edges][0]
+    corner1_edge2 = [edge2 for edge2 in edge.verts[0].link_edges if edge2 != edge and edge2 in face2.edges][0]
+
+    corner2_edge1 = [edge1 for edge1 in edge.verts[1].link_edges if edge1 != edge and edge1 in face1.edges][0]
+    corner2_edge2 = [edge2 for edge2 in edge.verts[1].link_edges if edge2 != edge and edge2 in face2.edges][0]
+
+    angle11 = get_angle_between_edges(corner1_edge1, edge, edge.verts[0])
+    angle12 = get_angle_between_edges(corner1_edge2, edge, edge.verts[0])
+
+    angle21 = get_angle_between_edges(corner2_edge1, edge, edge.verts[1])
+    angle22 = get_angle_between_edges(corner2_edge2, edge, edge.verts[1])
+
+    angle1 = angle11 + angle12
+    angle2 = angle21 + angle22
+
+    if angle1 > math.pi or angle2 > math.pi:
+        return 100000000
+
+    # weight is lowest when angles are 90 degrees
+    angle1 = abs(abs(angle1) - math.pi / 2)
+    angle2 = abs(abs(angle2) - math.pi / 2)
+
+    # faces should be planar
+    face1 = edge.link_faces[0]
+    face2 = edge.link_faces[1]
+
+    face1.normal_update()
+    face2.normal_update()
+
+    normal1 = face1.normal
+    normal2 = face2.normal
+
+    if normal1.length == 0 or normal2.length == 0:
+        return 100000000
+
+    normal_diff = normal1.angle(normal2)
+
+    return angle + angle1 + angle2 + normal_diff
+
+
+def iterativly_disolve_edges(triangles, avg_direction, bm):
+    while len(triangles) > 0:
+        current_face = triangles.pop(0)
+        if not current_face.is_valid or len(current_face.verts) != 3:
+            continue
+
+        # get edge with highest weight
+        best_edge = None
+        best_weight = 100000000
+        for edge in current_face.edges:
+            weight = get_edge_disolve_weight(edge, avg_direction)
+            if weight < best_weight:
+                best_weight = weight
+                best_edge = edge
+
+        if best_weight == 100000000:
+            continue
+
+        link_faces = set()
+        for face in best_edge.link_faces:
+            for edge in face.edges:
+                for link_face in edge.link_faces:
+                    link_faces.add(link_face)
+
+        # disolve edge
+        bmesh.ops.dissolve_edges(bm, edges=[best_edge])
+
+        # add link faces to queue
+        for face in link_faces:
+            if face.is_valid and len(face.verts) == 3 and face.select:
+                triangles.append(face)
         
 
 

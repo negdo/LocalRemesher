@@ -224,9 +224,45 @@ def get_faces(edges, bm):
     return created_faces
 
 
+def is_on_inside(point, edge):
+    # returns False, if point is on the inside of face that is connected to edge
+    if len(edge.link_faces) != 1:
+        return False
+
+    edge.link_faces[0].normal_update()
+    plane1_normal = edge.link_faces[0].normal.normalized()
+    plane2_normal = (edge.verts[1].co - edge.verts[0].co).normalized()
+    center = (edge.verts[1].co + edge.verts[0].co) / 2
+
+    line1, line2 = mathutils.geometry.intersect_plane_plane(center, plane1_normal, center, plane2_normal)
+    line2 = line2.normalized() * edge.calc_length() + line1
+
+    if line1 != None:
+        projected, _ = mathutils.geometry.intersect_point_line(point, line1, line2)
+        t = (projected - center).length
+
+        if t <= 0.01:
+            return False
+
+    return True
 
 
+def get_particle_weight(particle, edge, avg_length, mode="particle"):
 
+    raw_dist1 = (edge.verts[0].co - particle).length
+    raw_dist2 = (edge.verts[1].co - particle).length
+
+    dist1 = abs(raw_dist1 - avg_length)
+    dist2 = abs(raw_dist2 - avg_length)
+
+    if mode == "vertex":
+        # distance from center of edge - pick the closest one
+        center = (edge.verts[0].co + edge.verts[1].co) / 2
+        dist3 = abs((center - particle).length - avg_length)
+
+        return (dist1 / avg_length + dist2 / avg_length + 10 * dist3 / avg_length) * ((raw_dist1 + raw_dist2) / 2 / avg_length)
+
+    return dist1 / avg_length + dist2 / avg_length
         
 
 
