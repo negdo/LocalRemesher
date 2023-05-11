@@ -145,6 +145,8 @@ for i in range(len(connecting_vertices)-1):
         if intersect is not None:
             # project the point on original mesh
             intersect = project_point_to_faces(projection_tree, intersect, bm_proj)
+            if intersect is None:
+                continue
 
             # create new vertex
             new_vert = bm.verts.new(intersect)

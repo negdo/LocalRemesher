@@ -109,6 +109,8 @@ def project_point_to_faces(bvh_tree, point, bm):
 
     # find closest face
     closest_face = bvh_tree.find_nearest(point)[2]
+    if closest_face is None:
+        return None
     closest_face = bm.faces[closest_face].verts
 
     # get closest point on face
