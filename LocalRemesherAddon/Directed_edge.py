@@ -1,8 +1,7 @@
 import numpy as np
-from other_utils import *
+from .other_utils import *
 import math
 
-from other_utils import *
 
 
 class Directed_edge:

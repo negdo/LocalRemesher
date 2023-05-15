@@ -3,9 +3,9 @@ import bmesh
 import numpy as np
 import heapq
 
-from other_utils import *
-from Directed_edge import *
-from building_utils import sort_vertices
+from .other_utils import *
+from .Directed_edge import *
+from .building_utils import sort_vertices
 
 def get_edge_split_weight(face, start, end, avg_direction, direct_coords=False):
     # start and end are vertices
