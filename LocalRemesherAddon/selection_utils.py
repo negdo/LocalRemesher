@@ -5,7 +5,7 @@ import mathutils
 import sys
 
 sys.path.append("C:/Users/miham/Documents/3d/blender/scripts/local remesh/LocalRemesher/rewrite")
-from Directed_edge import *
+from .Directed_edge import *
 
 # returns selected faces and their vertices
 def get_selected(bm):

@@ -5,7 +5,7 @@ import mathutils
 import sys
 
 sys.path.append("C:/Users/miham/Documents/3d/blender/scripts/local remesh/LocalRemesher/rewrite")
-from Directed_edge import *
+from .Directed_edge import *
 
 # select next vertex in loop
 def select_next(current_edge, vertex, selected_edges, illegal_edges):
