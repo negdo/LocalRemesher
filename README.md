@@ -4,7 +4,7 @@ Blender addon for remeshing selected area with awarness of surrounding geometry.
 
 ## Installation
 
-- Download the latest release
+- Download the LocalRemesher.zip from the latest [release](https://github.com/negdo/LocalRemesher/releases)
 - Open Blender
 - Go to `Edit > Preferences > Add-ons > Install...`
 - Select the downloaded file
