@@ -143,7 +143,8 @@ for edge in bm.edges:
             edges_sharpnes[edge] = distance
 
 for i in range(len(particles)):
-    for edge in edges_sharpnes:
+    # randomly sort edges
+    for edge in edges_sharpnes.sort(key=lambda x: np.random.uniform(0, 1)):
         new_point, _ = mathutils.geometry.intersect_point_line(particles[i], edge.verts[0].co, edge.verts[1].co)
         dist = (new_point - particles[i]).length
         t = (new_point - edge.verts[1].co).length + (new_point - edge.verts[0].co).length > 1.1 * edge.calc_length()

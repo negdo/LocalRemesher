@@ -286,7 +286,7 @@ class ParticleRemesher(bpy.types.Operator):
         # recalculate normals
         bmesh.ops.recalc_face_normals(bm, faces=selected_faces)
 
-        # project vertices to original mesh uing interpolation
+        # project vertices to original mesh
         vertices = [vert for vert in bm.verts if vert.select]
         projection_tree = preprate_bm_for_projection(bm_proj2, subdiv=1, delete_faces=False)
         for vert in vertices:
@@ -305,10 +305,6 @@ class ParticleRemesher(bpy.types.Operator):
                         selected = False
                         break
                 face.select = selected
-
-        # look at pairs of quads and potentially change the splitting line
-        vertices = [vert for vert in bm.verts if vert.select and vert.is_valid]
-        improve_edge_flow_direction(bm, vertices, avg_direction)
 
         # update bmesh
         bm.to_mesh(me)
